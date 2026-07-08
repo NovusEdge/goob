@@ -1,0 +1,20 @@
+{
+  "sheet": "cat-sprites.png",
+  "frameSize": [32, 32],
+  "artist": {
+    "name": "Elthen",
+    "url": "https://elthen.itch.io/2d-pixel-art-cat-sprites"
+  },
+  "states": {
+    "idle":     { "row": 0, "frames": 4, "fps": 3 },
+    "idle2":    { "row": 1, "frames": 4, "fps": 3 },
+    "clean":    { "row": 2, "frames": 3, "fps": 4 },
+    "clean2":   { "row": 3, "frames": 3, "fps": 4 },
+    "sleep":    { "row": 4, "frames": 5, "fps": 2 },
+    "paw":      { "row": 5, "frames": 5, "fps": 4 },
+    "walk":     { "row": 6, "frames": 4, "fps": 8 },
+    "walk2":    { "row": 7, "frames": 4, "fps": 8 },
+    "jump":     { "row": 8, "frames": 4, "fps": 6 },
+    "scared":   { "row": 9, "frames": 4, "fps": 6 }
+  }
+}

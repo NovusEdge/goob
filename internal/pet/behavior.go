@@ -2,102 +2,188 @@ package pet
 
 import "math/rand"
 
-type State int
-
-const (
-	Idle State = iota
-	Walking
-	Sitting
-	Sleeping
-	Chasing
-	Falling
-)
-
 type Pet struct {
-	X, Y       int
-	state      State
-	sprite     *Sprite
-	target     struct{ x, y int }
-	idleTimer  int
-	screenW    int
-	screenH    int
+	X, Y      int
+	state     string
+	anim      string // current animation name
+	target    struct{ x, y int }
+	timer     int
+	screenW   int
+	screenH   int
+	frameW    int
+	frameH    int
+	variant   int // for picking idle/idle2, walk/walk2, etc
 }
 
-func New() *Pet {
-	// ponytail: hardcoded screen size, detect at runtime later
+func New(screenW, screenH, frameW, frameH int) *Pet {
 	return &Pet{
-		X:       100,
-		Y:       100,
-		state:   Idle,
-		screenW: 1920,
-		screenH: 1080,
+		X:       screenW / 2,
+		Y:       screenH - frameH - 100,
+		state:   "idle",
+		anim:    "idle",
+		screenW: screenW,
+		screenH: screenH,
+		frameW:  frameW,
+		frameH:  frameH,
 	}
 }
 
 func (p *Pet) Update(cursorX, cursorY int) {
 	switch p.state {
-	case Idle:
-		p.idleTimer++
-		if p.idleTimer > 180 { // ~3 sec at 60fps
-			p.idleTimer = 0
+	case "idle":
+		p.anim = pick("idle", "idle2", p.variant)
+		p.timer++
+		if p.timer > 180 {
+			p.timer = 0
 			p.decideNextAction()
 		}
-	case Walking:
-		p.moveTowardTarget()
-	case Chasing:
-		p.target.x, p.target.y = cursorX, cursorY
-		p.moveTowardTarget()
-	case Sitting, Sleeping:
-		// chill
-	case Falling:
+
+	case "walk":
+		p.anim = pick("walk", "walk2", p.variant)
+		p.moveTowardTarget(2)
+
+	case "chase":
+		p.anim = "walk2"
+		p.target.x, p.target.y = cursorX-p.frameW/2, cursorY-p.frameH/2
+		p.moveTowardTarget(4)
+
+	case "clean":
+		p.anim = pick("clean", "clean2", p.variant)
+		p.timer++
+		if p.timer > 240 {
+			p.timer = 0
+			p.state = "idle"
+		}
+
+	case "sleep":
+		p.anim = "sleep"
+		p.timer++
+		if p.timer > 400 {
+			p.timer = 0
+			p.state = "idle"
+		}
+
+	case "paw":
+		p.anim = "paw"
+		p.timer++
+		if p.timer > 120 {
+			p.timer = 0
+			p.state = "idle"
+		}
+
+	case "jump":
+		p.anim = "jump"
+		p.Y -= 3
+		p.timer++
+		if p.timer > 30 {
+			p.state = "fall"
+			p.timer = 0
+		}
+
+	case "fall":
+		p.anim = "jump"
 		p.Y += 4
-		if p.Y >= p.screenH-64 {
-			p.Y = p.screenH - 64
-			p.state = Idle
+		if p.Y >= p.screenH-p.frameH {
+			p.Y = p.screenH - p.frameH
+			p.state = "idle"
+		}
+
+	case "scared":
+		p.anim = "scared"
+		p.timer++
+		if p.timer > 90 {
+			p.timer = 0
+			p.state = "idle"
 		}
 	}
+
+	p.clampPosition()
 }
 
 func (p *Pet) decideNextAction() {
-	switch rand.Intn(4) {
-	case 0:
-		p.state = Walking
-		p.target.x = rand.Intn(p.screenW - 64)
-		p.target.y = rand.Intn(p.screenH - 64)
-	case 1:
-		p.state = Sitting
-	case 2:
-		p.state = Chasing
-	default:
-		p.state = Idle
+	p.variant = rand.Intn(2)
+	actions := []string{"walk", "clean", "sleep", "paw", "idle"}
+	weights := []int{30, 20, 15, 15, 20} // percentages
+
+	roll := rand.Intn(100)
+	sum := 0
+	for i, w := range weights {
+		sum += w
+		if roll < sum {
+			p.state = actions[i]
+			break
+		}
+	}
+
+	if p.state == "walk" {
+		p.target.x = rand.Intn(p.screenW - p.frameW)
+		p.target.y = rand.Intn(p.screenH - p.frameH)
 	}
 }
 
-func (p *Pet) moveTowardTarget() {
+func (p *Pet) moveTowardTarget(speed int) {
 	dx := p.target.x - p.X
 	dy := p.target.y - p.Y
 
-	if abs(dx) < 4 && abs(dy) < 4 {
-		p.state = Idle
+	if abs(dx) < speed && abs(dy) < speed {
+		p.state = "idle"
+		p.timer = 0
 		return
 	}
 
 	if dx > 0 {
-		p.X += 2
+		p.X += speed
 	} else if dx < 0 {
-		p.X -= 2
+		p.X -= speed
 	}
 	if dy > 0 {
-		p.Y += 2
+		p.Y += speed
 	} else if dy < 0 {
-		p.Y -= 2
+		p.Y -= speed
 	}
 }
 
-func (p *Pet) Width() int  { return 64 } // ponytail: fixed size, dynamic from sprite bounds later
-func (p *Pet) Height() int { return 64 }
-func (p *Pet) Frame() any  { return nil } // placeholder, returns current sprite frame
-func (p *Pet) State() State { return p.state }
+func (p *Pet) clampPosition() {
+	if p.X < 0 {
+		p.X = 0
+	}
+	if p.X > p.screenW-p.frameW {
+		p.X = p.screenW - p.frameW
+	}
+	if p.Y < 0 {
+		p.Y = 0
+	}
+	if p.Y > p.screenH-p.frameH {
+		p.Y = p.screenH - p.frameH
+	}
+}
+
+func (p *Pet) Anim() string   { return p.anim }
+func (p *Pet) Width() int     { return p.frameW }
+func (p *Pet) Height() int    { return p.frameH }
+
+// Scare triggers the scared animation
+func (p *Pet) Scare() {
+	if p.state != "scared" {
+		p.state = "scared"
+		p.timer = 0
+	}
+}
+
+// Jump triggers a jump
+func (p *Pet) Jump() {
+	if p.state != "jump" && p.state != "fall" {
+		p.state = "jump"
+		p.timer = 0
+	}
+}
+
+func pick(a, b string, variant int) string {
+	if variant == 0 {
+		return a
+	}
+	return b
+}
 
 func abs(x int) int {
 	if x < 0 {
