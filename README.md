@@ -77,4 +77,8 @@ Drop any Unity-style spritesheet and create a manifest:
 
 ## Credits
 
-Default cat sprites by [Elthen](https://elthen.itch.io/2d-pixel-art-cat-sprites) — go support them!
+Sprite packs included:
+- **85-animation cat** by [BowPixel](https://bowpixel.itch.io/meow-cat-85-animation) — grey & ginger variants
+- **Simple cat** by [Elthen](https://elthen.itch.io/2d-pixel-art-cat-sprites)
+
+Go support these artists!

@@ -125,6 +125,65 @@ func (p *Pet) Update(cursorX, cursorY int) {
 			p.timer = 0
 			p.state = "idle"
 		}
+
+	case "sit":
+		p.anim = pick("sit", "sit2", p.variant)
+		p.velX = 0
+		p.timer++
+		if p.timer > 300 {
+			p.timer = 0
+			p.state = "idle"
+		}
+
+	case "loaf":
+		p.anim = "loaf"
+		p.velX = 0
+		p.timer++
+		if p.timer > 400 {
+			p.timer = 0
+			p.state = "idle"
+		}
+
+	case "stretch":
+		p.anim = "stretch"
+		p.velX = 0
+		p.timer++
+		if p.timer > 120 {
+			p.timer = 0
+			p.state = "idle"
+		}
+
+	case "yawn":
+		p.anim = "yawn"
+		p.velX = 0
+		p.timer++
+		if p.timer > 120 {
+			p.timer = 0
+			p.state = "idle"
+		}
+
+	case "meow":
+		p.anim = "meow"
+		p.velX = 0
+		p.timer++
+		if p.timer > 90 {
+			p.timer = 0
+			p.state = "idle"
+		}
+
+	case "roll":
+		p.anim = "roll"
+		p.velX = 0
+		p.timer++
+		if p.timer > 150 {
+			p.timer = 0
+			p.state = "idle"
+		}
+
+	case "held":
+		p.anim = "held"
+		p.velX = 0
+		p.velY = 0
 	}
 
 	// apply velocities
@@ -153,13 +212,18 @@ func (p *Pet) Update(cursorX, cursorY int) {
 func (p *Pet) decideNextAction() {
 	p.variant = rand.Intn(2)
 
-	// only certain actions when grounded
 	if !p.Grounded() {
 		return
 	}
 
-	actions := []string{"walk", "chase", "clean", "sleep", "paw", "jump", "scared", "idle"}
-	weights := []int{25, 12, 12, 10, 10, 8, 3, 20}
+	actions := []string{
+		"walk", "sit", "clean", "sleep", "paw", "jump",
+		"stretch", "yawn", "loaf", "meow", "roll", "idle",
+	}
+	weights := []int{
+		20, 10, 10, 8, 8, 6,
+		5, 5, 8, 5, 5, 10,
+	}
 
 	roll := rand.Intn(100)
 	sum := 0
@@ -215,6 +279,18 @@ func (p *Pet) Jump() {
 	if p.Grounded() {
 		p.state = "jump"
 		p.timer = 0
+	}
+}
+
+func (p *Pet) Hold(x, y int) {
+	p.state = "held"
+	p.X = x - p.frameW/2
+	p.Y = y - p.frameH/2
+}
+
+func (p *Pet) Release() {
+	if p.state == "held" {
+		p.state = "airborne"
 	}
 }
 
