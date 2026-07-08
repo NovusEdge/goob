@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 	"log"
+	"os"
+	"runtime"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
 
@@ -14,15 +16,21 @@ func main() {
 	manifestPath := flag.String("manifest", "assets/cat-sprites.json", "path to sprite manifest")
 	flag.Parse()
 
-	// get screen size before creating window
-	rl.SetConfigFlags(rl.FlagWindowHidden)
-	rl.InitWindow(1, 1, "")
-	screenW := rl.GetMonitorWidth(rl.GetCurrentMonitor())
-	screenH := rl.GetMonitorHeight(rl.GetCurrentMonitor())
-	rl.CloseWindow()
+	// suppress all raylib logs
+	rl.SetTraceLogLevel(rl.LogNone)
+
+	// detect screen size
+	// ponytail: hardcoded fallback, proper detection needs platform code
+	screenW, screenH := 1920, 1080
+	if runtime.GOOS != "linux" || os.Getenv("WAYLAND_DISPLAY") == "" {
+		rl.SetConfigFlags(rl.FlagWindowHidden)
+		rl.InitWindow(1, 1, "")
+		screenW = rl.GetMonitorWidth(rl.GetCurrentMonitor())
+		screenH = rl.GetMonitorHeight(rl.GetCurrentMonitor())
+		rl.CloseWindow()
+	}
 
 	// create transparent overlay window
-	rl.SetTraceLogLevel(rl.LogWarning)
 	rl.SetConfigFlags(rl.FlagWindowTransparent | rl.FlagWindowUndecorated | rl.FlagWindowTopmost | rl.FlagWindowMousePassthrough)
 	rl.InitWindow(64, 64, "goob - lil vro 🥀")
 	rl.SetTargetFPS(60)
@@ -37,12 +45,16 @@ func main() {
 	frameW, frameH := sheet.FrameSize()
 	p := pet.New(screenW, screenH, frameW, frameH)
 
+	// check if we can move windows (X11) or not (Wayland)
+	canMove := os.Getenv("WAYLAND_DISPLAY") == ""
+
 	for !rl.WindowShouldClose() {
-		// ponytail: cursor tracking disabled, needs platform-specific global coords
 		p.Update(0, 0)
 		sheet.Update(p.Anim())
 
-		rl.SetWindowPosition(p.X, p.Y)
+		if canMove {
+			rl.SetWindowPosition(p.X, p.Y)
+		}
 		rl.SetWindowSize(frameW, frameH)
 
 		rl.BeginDrawing()
