@@ -3,23 +3,24 @@ package pet
 import "math/rand"
 
 type Pet struct {
-	X, Y      int
-	velY      int // vertical velocity for gravity
-	state     string
-	anim      string // current animation name
-	target    struct{ x, y int }
-	timer     int
-	screenW   int
-	screenH   int
-	frameW    int
-	frameH    int
-	variant   int // for picking idle/idle2, walk/walk2, etc
+	X, Y       int
+	velX, velY int
+	FacingLeft bool
+	state      string
+	anim       string
+	target     struct{ x, y int }
+	timer      int
+	screenW    int
+	screenH    int
+	frameW     int
+	frameH     int
+	variant    int
 }
 
 func New(screenW, screenH, frameW, frameH int) *Pet {
 	return &Pet{
 		X:       screenW / 2,
-		Y:       screenH - frameH - 100,
+		Y:       screenH - frameH,
 		state:   "idle",
 		anim:    "idle",
 		screenW: screenW,
@@ -30,9 +31,12 @@ func New(screenW, screenH, frameW, frameH int) *Pet {
 }
 
 func (p *Pet) Update(cursorX, cursorY int) {
+	ground := p.screenH - p.frameH
+
 	switch p.state {
 	case "idle":
 		p.anim = pick("idle", "idle2", p.variant)
+		p.velX = 0
 		p.timer++
 		if p.timer > 180 {
 			p.timer = 0
@@ -41,20 +45,45 @@ func (p *Pet) Update(cursorX, cursorY int) {
 
 	case "walk":
 		p.anim = pick("walk", "walk2", p.variant)
-		p.moveTowardTarget(2)
+		dx := p.target.x - p.X
+		if abs(dx) < 4 {
+			p.state = "idle"
+			p.velX = 0
+			p.timer = 0
+		} else if dx > 0 {
+			p.velX = 2
+			p.FacingLeft = false
+		} else {
+			p.velX = -2
+			p.FacingLeft = true
+		}
 
 	case "chase":
 		p.anim = "walk2"
 		if cursorX >= 0 && cursorY >= 0 {
-			p.target.x, p.target.y = cursorX-p.frameW/2, cursorY-p.frameH/2
-			p.moveTowardTarget(4)
+			dx := cursorX - p.X - p.frameW/2
+			if abs(dx) < 20 {
+				p.velX = 0
+			} else if dx > 0 {
+				p.velX = 4
+				p.FacingLeft = false
+			} else {
+				p.velX = -4
+				p.FacingLeft = true
+			}
+			// chase timer - give up after a while
+			p.timer++
+			if p.timer > 300 {
+				p.state = "idle"
+				p.timer = 0
+			}
 		} else {
-			// no cursor data, fall back to idle
 			p.state = "idle"
 		}
 
 	case "clean":
 		p.anim = pick("clean", "clean2", p.variant)
+		p.velX = 0
 		p.timer++
 		if p.timer > 240 {
 			p.timer = 0
@@ -63,6 +92,7 @@ func (p *Pet) Update(cursorX, cursorY int) {
 
 	case "sleep":
 		p.anim = "sleep"
+		p.velX = 0
 		p.timer++
 		if p.timer > 400 {
 			p.timer = 0
@@ -71,6 +101,7 @@ func (p *Pet) Update(cursorX, cursorY int) {
 
 	case "paw":
 		p.anim = "paw"
+		p.velX = 0
 		p.timer++
 		if p.timer > 120 {
 			p.timer = 0
@@ -79,23 +110,16 @@ func (p *Pet) Update(cursorX, cursorY int) {
 
 	case "jump":
 		p.anim = "jump"
-		p.Y -= 3
-		p.timer++
-		if p.timer > 30 {
-			p.state = "fall"
-			p.timer = 0
-		}
+		p.velY = -8
+		p.state = "airborne"
 
-	case "fall":
+	case "airborne":
 		p.anim = "jump"
-		p.Y += 4
-		if p.Y >= p.screenH-p.frameH {
-			p.Y = p.screenH - p.frameH
-			p.state = "idle"
-		}
+		// gravity handled below
 
 	case "scared":
 		p.anim = "scared"
+		p.velX = 0
 		p.timer++
 		if p.timer > 90 {
 			p.timer = 0
@@ -103,18 +127,39 @@ func (p *Pet) Update(cursorX, cursorY int) {
 		}
 	}
 
-	// apply gravity unless jumping/falling (those handle their own physics)
-	if p.state != "jump" && p.state != "fall" {
-		p.applyGravity()
+	// apply velocities
+	p.X += p.velX
+
+	// gravity
+	if p.Y < ground {
+		p.velY += 1
+		if p.velY > 10 {
+			p.velY = 10
+		}
+	} else {
+		p.Y = ground
+		if p.velY > 0 {
+			p.velY = 0
+			if p.state == "airborne" {
+				p.state = "idle"
+			}
+		}
 	}
+	p.Y += p.velY
 
 	p.clampPosition()
 }
 
 func (p *Pet) decideNextAction() {
 	p.variant = rand.Intn(2)
+
+	// only certain actions when grounded
+	if !p.Grounded() {
+		return
+	}
+
 	actions := []string{"walk", "chase", "clean", "sleep", "paw", "jump", "scared", "idle"}
-	weights := []int{20, 15, 12, 10, 10, 8, 5, 20} // percentages
+	weights := []int{25, 12, 12, 10, 10, 8, 3, 20}
 
 	roll := rand.Intn(100)
 	sum := 0
@@ -127,55 +172,19 @@ func (p *Pet) decideNextAction() {
 	}
 
 	if p.state == "walk" {
-		// prefer screen edges
-		if rand.Intn(2) == 0 {
-			// horizontal edge
-			p.target.x = rand.Intn(p.screenW - p.frameW)
-			if rand.Intn(2) == 0 {
-				p.target.y = 0
-			} else {
-				p.target.y = p.screenH - p.frameH
-			}
-		} else {
-			// vertical edge
-			if rand.Intn(2) == 0 {
-				p.target.x = 0
-			} else {
-				p.target.x = p.screenW - p.frameW
-			}
-			p.target.y = rand.Intn(p.screenH - p.frameH)
-		}
-	}
-}
-
-func (p *Pet) moveTowardTarget(speed int) {
-	dx := p.target.x - p.X
-	dy := p.target.y - p.Y
-
-	if abs(dx) < speed && abs(dy) < speed {
-		p.state = "idle"
-		p.timer = 0
-		return
-	}
-
-	if dx > 0 {
-		p.X += speed
-	} else if dx < 0 {
-		p.X -= speed
-	}
-	if dy > 0 {
-		p.Y += speed
-	} else if dy < 0 {
-		p.Y -= speed
+		// pick random X target, stay on ground
+		p.target.x = rand.Intn(p.screenW - p.frameW)
 	}
 }
 
 func (p *Pet) clampPosition() {
 	if p.X < 0 {
 		p.X = 0
+		p.velX = 0
 	}
 	if p.X > p.screenW-p.frameW {
 		p.X = p.screenW - p.frameW
+		p.velX = 0
 	}
 	if p.Y < 0 {
 		p.Y = 0
@@ -187,28 +196,14 @@ func (p *Pet) clampPosition() {
 	}
 }
 
-func (p *Pet) applyGravity() {
-	ground := p.screenH - p.frameH
-	if p.Y < ground {
-		p.velY += 1 // gravity acceleration
-		if p.velY > 8 {
-			p.velY = 8 // terminal velocity
-		}
-		p.Y += p.velY
-	} else {
-		p.velY = 0
-	}
-}
-
 func (p *Pet) Grounded() bool {
 	return p.Y >= p.screenH-p.frameH
 }
 
-func (p *Pet) Anim() string   { return p.anim }
-func (p *Pet) Width() int     { return p.frameW }
-func (p *Pet) Height() int    { return p.frameH }
+func (p *Pet) Anim() string { return p.anim }
+func (p *Pet) Width() int   { return p.frameW }
+func (p *Pet) Height() int  { return p.frameH }
 
-// Scare triggers the scared animation
 func (p *Pet) Scare() {
 	if p.state != "scared" {
 		p.state = "scared"
@@ -216,9 +211,8 @@ func (p *Pet) Scare() {
 	}
 }
 
-// Jump triggers a jump
 func (p *Pet) Jump() {
-	if p.state != "jump" && p.state != "fall" {
+	if p.Grounded() {
 		p.state = "jump"
 		p.timer = 0
 	}

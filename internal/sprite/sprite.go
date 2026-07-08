@@ -65,7 +65,7 @@ func (s *Sheet) Update(state string) {
 	}
 }
 
-func (s *Sheet) Draw(state string, scale int) {
+func (s *Sheet) Draw(state string, scale int, flipX bool) {
 	a, ok := s.anims[state]
 	if !ok {
 		a = s.anims["idle"]
@@ -74,10 +74,15 @@ func (s *Sheet) Draw(state string, scale int) {
 		return
 	}
 
+	srcW := float32(s.frameW)
+	if flipX {
+		srcW = -srcW // negative width flips horizontally
+	}
+
 	src := rl.Rectangle{
 		X:      float32(a.frame * s.frameW),
 		Y:      float32(a.row * s.frameH),
-		Width:  float32(s.frameW),
+		Width:  srcW,
 		Height: float32(s.frameH),
 	}
 	dst := rl.Rectangle{

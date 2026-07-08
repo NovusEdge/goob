@@ -47,7 +47,7 @@ func runRaylib(manifestPath string, scale int, newPet func(int, int, int, int) *
 
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.Blank)
-		sheet.Draw(p.Anim(), scale)
+		sheet.Draw(p.Anim(), scale, p.FacingLeft)
 		rl.EndDrawing()
 	}
 }
