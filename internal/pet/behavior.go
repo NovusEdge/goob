@@ -38,7 +38,7 @@ func (p *Pet) Update(cursorX, cursorY int) {
 		p.anim = pick("idle", "idle2", p.variant)
 		p.velX = 0
 		p.timer++
-		if p.timer > 180 {
+		if p.timer > 90 { // faster action picking
 			p.timer = 0
 			p.decideNextAction()
 		}
@@ -46,15 +46,15 @@ func (p *Pet) Update(cursorX, cursorY int) {
 	case "walk":
 		p.anim = pick("walk", "walk2", p.variant)
 		dx := p.target.x - p.X
-		if abs(dx) < 4 {
+		if abs(dx) < 8 {
 			p.state = "idle"
 			p.velX = 0
 			p.timer = 0
 		} else if dx > 0 {
-			p.velX = 2
+			p.velX = 3
 			p.FacingLeft = false
 		} else {
-			p.velX = -2
+			p.velX = -3
 			p.FacingLeft = true
 		}
 
@@ -217,12 +217,14 @@ func (p *Pet) decideNextAction() {
 	}
 
 	actions := []string{
-		"walk", "sit", "clean", "sleep", "paw", "jump",
+		"walk", "walk", "walk", // triple weight for movement
+		"sit", "clean", "sleep", "paw", "jump",
 		"stretch", "yawn", "loaf", "meow", "roll", "idle",
 	}
 	weights := []int{
-		20, 10, 10, 8, 8, 6,
-		5, 5, 8, 5, 5, 10,
+		20, 15, 10, // 45% walk total
+		8, 6, 5, 5, 5,
+		4, 4, 5, 4, 4, 5,
 	}
 
 	roll := rand.Intn(100)

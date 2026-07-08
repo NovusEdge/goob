@@ -10,7 +10,7 @@ import (
 
 func main() {
 	manifestPath := flag.String("manifest", "assets/cat-sprites.json", "path to sprite manifest")
-	scale := flag.Int("scale", 8, "sprite scale factor")
+	scale := flag.Int("scale", 6, "sprite scale factor")
 	backend := flag.String("backend", "auto", "window backend: auto, raylib, wayland")
 	flag.Parse()
 
