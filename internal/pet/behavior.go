@@ -44,17 +44,17 @@ func (p *Pet) Update(cursorX, cursorY int) {
 		}
 
 	case "walk":
-		p.anim = pick("walk", "walk2", p.variant)
+		p.anim = "walk"
 		dx := p.target.x - p.X
-		if abs(dx) < 8 {
+		if abs(dx) < 4 {
 			p.state = "idle"
 			p.velX = 0
 			p.timer = 0
 		} else if dx > 0 {
-			p.velX = 3
+			p.velX = 1
 			p.FacingLeft = false
 		} else {
-			p.velX = -3
+			p.velX = -1
 			p.FacingLeft = true
 		}
 
