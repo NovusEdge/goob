@@ -22,6 +22,7 @@ func main() {
 	rl.CloseWindow()
 
 	// create transparent overlay window
+	rl.SetTraceLogLevel(rl.LogWarning)
 	rl.SetConfigFlags(rl.FlagWindowTransparent | rl.FlagWindowUndecorated | rl.FlagWindowTopmost | rl.FlagWindowMousePassthrough)
 	rl.InitWindow(64, 64, "goob - lil vro 🥀")
 	rl.SetTargetFPS(60)
@@ -37,11 +38,8 @@ func main() {
 	p := pet.New(screenW, screenH, frameW, frameH)
 
 	for !rl.WindowShouldClose() {
-		// ponytail: GetMousePosition is window-relative, need screen coords
-		// this is a platform-specific problem we'll solve later
-		mouseX, mouseY := int(rl.GetMousePosition().X)+p.X, int(rl.GetMousePosition().Y)+p.Y
-
-		p.Update(mouseX, mouseY)
+		// ponytail: cursor tracking disabled, needs platform-specific global coords
+		p.Update(0, 0)
 		sheet.Update(p.Anim())
 
 		rl.SetWindowPosition(p.X, p.Y)

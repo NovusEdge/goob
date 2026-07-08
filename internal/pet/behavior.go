@@ -102,8 +102,9 @@ func (p *Pet) Update(cursorX, cursorY int) {
 
 func (p *Pet) decideNextAction() {
 	p.variant = rand.Intn(2)
-	actions := []string{"walk", "clean", "sleep", "paw", "idle"}
-	weights := []int{30, 20, 15, 15, 20} // percentages
+	// ponytail: chase commented out, needs global cursor coords
+	actions := []string{"walk", "clean", "sleep", "paw", "jump", "scared", "idle"}
+	weights := []int{25, 15, 12, 12, 8, 5, 23} // percentages
 
 	roll := rand.Intn(100)
 	sum := 0
@@ -116,8 +117,24 @@ func (p *Pet) decideNextAction() {
 	}
 
 	if p.state == "walk" {
-		p.target.x = rand.Intn(p.screenW - p.frameW)
-		p.target.y = rand.Intn(p.screenH - p.frameH)
+		// prefer screen edges
+		if rand.Intn(2) == 0 {
+			// horizontal edge
+			p.target.x = rand.Intn(p.screenW - p.frameW)
+			if rand.Intn(2) == 0 {
+				p.target.y = 0
+			} else {
+				p.target.y = p.screenH - p.frameH
+			}
+		} else {
+			// vertical edge
+			if rand.Intn(2) == 0 {
+				p.target.x = 0
+			} else {
+				p.target.x = p.screenW - p.frameW
+			}
+			p.target.y = rand.Intn(p.screenH - p.frameH)
+		}
 	}
 }
 
