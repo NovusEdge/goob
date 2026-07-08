@@ -4,6 +4,7 @@ import "math/rand"
 
 type Pet struct {
 	X, Y      int
+	velY      int // vertical velocity for gravity
 	state     string
 	anim      string // current animation name
 	target    struct{ x, y int }
@@ -44,8 +45,13 @@ func (p *Pet) Update(cursorX, cursorY int) {
 
 	case "chase":
 		p.anim = "walk2"
-		p.target.x, p.target.y = cursorX-p.frameW/2, cursorY-p.frameH/2
-		p.moveTowardTarget(4)
+		if cursorX >= 0 && cursorY >= 0 {
+			p.target.x, p.target.y = cursorX-p.frameW/2, cursorY-p.frameH/2
+			p.moveTowardTarget(4)
+		} else {
+			// no cursor data, fall back to idle
+			p.state = "idle"
+		}
 
 	case "clean":
 		p.anim = pick("clean", "clean2", p.variant)
@@ -97,14 +103,18 @@ func (p *Pet) Update(cursorX, cursorY int) {
 		}
 	}
 
+	// apply gravity unless jumping/falling (those handle their own physics)
+	if p.state != "jump" && p.state != "fall" {
+		p.applyGravity()
+	}
+
 	p.clampPosition()
 }
 
 func (p *Pet) decideNextAction() {
 	p.variant = rand.Intn(2)
-	// ponytail: chase commented out, needs global cursor coords
-	actions := []string{"walk", "clean", "sleep", "paw", "jump", "scared", "idle"}
-	weights := []int{25, 15, 12, 12, 8, 5, 23} // percentages
+	actions := []string{"walk", "chase", "clean", "sleep", "paw", "jump", "scared", "idle"}
+	weights := []int{20, 15, 12, 10, 10, 8, 5, 20} // percentages
 
 	roll := rand.Intn(100)
 	sum := 0
@@ -169,10 +179,29 @@ func (p *Pet) clampPosition() {
 	}
 	if p.Y < 0 {
 		p.Y = 0
+		p.velY = 0
 	}
 	if p.Y > p.screenH-p.frameH {
 		p.Y = p.screenH - p.frameH
+		p.velY = 0
 	}
+}
+
+func (p *Pet) applyGravity() {
+	ground := p.screenH - p.frameH
+	if p.Y < ground {
+		p.velY += 1 // gravity acceleration
+		if p.velY > 8 {
+			p.velY = 8 // terminal velocity
+		}
+		p.Y += p.velY
+	} else {
+		p.velY = 0
+	}
+}
+
+func (p *Pet) Grounded() bool {
+	return p.Y >= p.screenH-p.frameH
 }
 
 func (p *Pet) Anim() string   { return p.anim }
