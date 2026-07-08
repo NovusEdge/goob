@@ -65,7 +65,7 @@ func (s *Sheet) Update(state string) {
 	}
 }
 
-func (s *Sheet) Draw(state string) {
+func (s *Sheet) Draw(state string, scale int) {
 	a, ok := s.anims[state]
 	if !ok {
 		a = s.anims["idle"]
@@ -83,8 +83,8 @@ func (s *Sheet) Draw(state string) {
 	dst := rl.Rectangle{
 		X:      0,
 		Y:      0,
-		Width:  float32(s.frameW),
-		Height: float32(s.frameH),
+		Width:  float32(s.frameW * scale),
+		Height: float32(s.frameH * scale),
 	}
 	rl.DrawTexturePro(s.texture, src, dst, rl.Vector2{}, 0, rl.White)
 }

@@ -14,6 +14,7 @@ import (
 
 func main() {
 	manifestPath := flag.String("manifest", "assets/cat-sprites.json", "path to sprite manifest")
+	scale := flag.Int("scale", 8, "sprite scale factor")
 	flag.Parse()
 
 	// suppress all raylib logs
@@ -43,7 +44,8 @@ func main() {
 	defer sheet.Unload()
 
 	frameW, frameH := sheet.FrameSize()
-	p := pet.New(screenW, screenH, frameW, frameH)
+	scaledW, scaledH := frameW*(*scale), frameH*(*scale)
+	p := pet.New(screenW, screenH, scaledW, scaledH)
 
 	// check if we can move windows (X11) or not (Wayland)
 	canMove := os.Getenv("WAYLAND_DISPLAY") == ""
@@ -55,11 +57,11 @@ func main() {
 		if canMove {
 			rl.SetWindowPosition(p.X, p.Y)
 		}
-		rl.SetWindowSize(frameW, frameH)
+		rl.SetWindowSize(scaledW, scaledH)
 
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.Blank)
-		sheet.Draw(p.Anim())
+		sheet.Draw(p.Anim(), *scale)
 		rl.EndDrawing()
 	}
 }
