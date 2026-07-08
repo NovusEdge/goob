@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"log"
 	"os"
 	"runtime"
 
@@ -18,10 +17,9 @@ func main() {
 	useWayland := *backend == "wayland" ||
 		(*backend == "auto" && runtime.GOOS == "linux" && os.Getenv("WAYLAND_DISPLAY") != "")
 
-	if useWayland {
-		log.Println("wayland backend not yet implemented, falling back to raylib")
-		log.Println("(window positioning won't work on wayland)")
+	if useWayland && runtime.GOOS == "linux" {
+		runWayland(*manifestPath, *scale, pet.New)
+	} else {
+		runRaylib(*manifestPath, *scale, pet.New)
 	}
-
-	runRaylib(*manifestPath, *scale, pet.New)
 }
