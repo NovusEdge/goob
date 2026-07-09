@@ -8,6 +8,10 @@ export_presets.cfg
 # Local planning docs (specs, implementation plans) — not part of the project
 docs/superpowers/
 
+# Agent scratch + local Claude Code guide — not part of the project
+.claude/
+CLAUDE.md
+
 # Local env (DEBUG toggle etc.)
 .env
 

@@ -31,7 +31,8 @@ everywhere except the pet itself, so your desktop stays fully usable.
 
 > **Wayland note:** goob is developed on Wayland and relies on a transparent
 > overlay + mouse passthrough. If transparency or click-through misbehaves,
-> that's compositor-dependent — start there.
+> that's compositor-dependent — start there. Native layer-shell support is
+> tracked in [#1](https://github.com/NovusEdge/goob/issues/1).
 
 > **Tip:** after adding a new `class_name` script, run `just check` once (a
 > headless import) before `just run`. Godot only registers new global classes on

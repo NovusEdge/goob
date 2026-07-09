@@ -1,65 +1,96 @@
 # goob — lil vro 🥀
 
 A desktop pet cat that lives on your screen — wanders, naps, chases your cursor,
-and reacts to what your machine is doing — commenting in a speech bubble, from a
-built-in line list or (optionally) a local/cloud LLM daemon. See
-[Getting Started](docs/getting-started.md#llm-commentary-optional). Built in
-**Godot 4**. Bring your own spritesheets.
+and reacts to what your machine is doing, commenting in a speech bubble from a
+built-in line list or (optionally) an LLM daemon. Built in **Godot 4**, and not
+hardcoded to a cat: bring your own spritesheet.
 
-## Run
+## Setup
 
-Open the project in Godot 4 and press **F5**, or from the CLI:
+**Required:** [Godot 4](https://godotengine.org/download) (4.3+, developed on
+4.7 — the standard build, not the .NET/C# one). It's a single self-contained
+binary; the pet has no other dependencies.
+
+Make sure `godot` is on your `PATH` (or pass `GODOT=/path/to/godot` to the
+`just` recipes below). [`just`](https://github.com/casey/just) is an optional
+convenience — every recipe is a one-liner you can also run by hand.
 
 ```bash
-godot --path .
+just run          # or:  godot --path .
 ```
 
-It spawns a fullscreen, transparent, always-on-top overlay. The window is
-click-through everywhere except the cat itself, so your desktop stays usable.
+That spawns a fullscreen, transparent, always-on-top overlay, click-through
+everywhere except the cat itself, so your desktop stays usable.
 
 - **Left-drag** the cat to pick it up and move it.
 - **Right-click** to pet it on the head.
 
+> After adding a new `class_name` script, run `just check` once (a headless
+> import) before `just run` — Godot only registers new global classes on a
+> filesystem scan.
+
+See **[docs/getting-started.md](docs/getting-started.md)** for install details,
+the Wayland note, and how to bring your own creature.
+
+### Optional: live LLM commentary
+
+Out of the box goob comments from a built-in list of canned lines — no setup,
+no network. Run the optional Python daemon and comments are generated live
+instead (and the pet can nudge its own behaviour); stop it and it silently
+falls back to canned lines.
+
+Needs [`uv`](https://docs.astral.sh/uv/) and one provider key. Copy
+`.env.example` to `.env`, set a key, then:
+
+```bash
+just daemon       # or:  uv run python -m daemon.server
+```
+
+`uv` pulls the daemon's deps (litellm) from `pyproject.toml` on first run.
+Providers (Gemini / OpenAI / Vertex / Ollama), auth, and trigger cadence:
+**[docs/llm-commentary.md](docs/llm-commentary.md)**.
+
+### Optional: control-panel TUI
+
+A terminal panel that launches and monitors the pet + daemon (status, CPU,
+spend, live logs). Needs the Go toolchain.
+
+```bash
+just tui          # or:  cd tui && go run .
+```
+
 ## How it works
 
 - `main.gd` — window setup (transparent overlay + `mouse_passthrough` clipped to
-  the cat's rect), input, and the frame loop. Builds the sprite animations and
-  per-animation loop lengths at runtime from the JSON manifest.
-- `pet.gd` (`PetBrain`) — the behavior state machine: idle/walk/chase/pounce,
-  fidgets (sit, clean, sleep, stretch, yawn, loaf, roll…), gravity, drag, and
-  system-driven **moods** (alert when a build is running, tired when the CPU is
-  hot or the battery is low).
-- `assets/*.json` — Unity-style spritesheet manifests (`row`, `frames`, `fps`).
+  the cat's rect), input, mood sampling, the speech bubble, and the frame loop.
+- `pet.gd` (`PetBrain`) — the behavior state machine over neutral engine verbs
+  (`idle`, `wander`, `follow`, `dash`, `jump`, `zoomies`, grab/drop, `startle`…),
+  per-creature fidgets, gravity, drag, and system-driven **moods** (alert when a
+  build is running, tired when the CPU is hot or the battery is low).
+- `pet_config.gd` (`PetConfig`) + `*.tres` — per-creature data: which SpriteFrames
+  animation maps onto each engine verb, plus actions, weights, speeds, and mood
+  reactions.
+- `daemon/` — the optional Python LLM sidecar (one localhost route, `POST /tick`).
+- `tui/` — the optional Go control panel.
 
-## Custom sprites
+## Make it your creature
 
-Point `MANIFEST_PATH`/`SPRITE_PATH` in `main.gd` at your sheet + manifest. Only
-`idle` is required — every other state falls back along a chain
-(`run → walk → idle`, `sleep → loaf → sit → idle`, …) so a minimal sheet still
-works and a full one shines.
+goob is **not hardcoded to a cat.** A creature is two data pieces, no engine code:
 
-```json
-{
-  "sheet": "my-pet.png",
-  "frameSize": [32, 32],
-  "states": {
-    "idle":  { "row": 0, "frames": 4, "fps": 3 },
-    "walk":  { "row": 6, "frames": 8, "fps": 8 },
-    "sleep": { "row": 47, "frames": 4, "fps": 2 }
-  }
-}
-```
+1. A **SpriteFrames** — the animations, authored in the Godot editor.
+2. A **PetConfig** `.tres` — maps those animations onto the engine verbs and sets
+   the personality (actions, weights, speeds, mood reactions).
+
+Only `idle` is required — every other verb falls back along a chain toward it, so
+a minimal sheet still works and a full one shines. The bundled `cat.tres` is the
+worked example. Full field reference: **[docs/configuration.md](docs/configuration.md)**;
+design: **[docs/behavior-model.md](docs/behavior-model.md)**.
 
 ## Roadmap
 
-- **Generic companion config** — decouple "cat" into a per-creature `PetConfig`
-  resource (mapping + actions + personality), so any sprite works with no code.
-  Design: `docs/behavior-model.md`.
-- **Config UI** for the high-level knobs (scale, follow-cursor, action weights…).
-  Open question on form: in-app Godot settings panel (recommended, one stack) vs.
-  a standalone launcher/wizard. TBD.
-- **LLM integration** - voice input, the pet picks states and replies via chat
-  bubbles (TTS later). See `docs/roadmap.md`.
+Shipped: LLM/canned commentary, the control-panel TUI, and the generic
+per-creature `PetConfig`. Next: a config UI for the high-level knobs; later,
+voice input + TTS. Details in **[docs/roadmap.md](docs/roadmap.md)**.
 
 ## Credits
 
