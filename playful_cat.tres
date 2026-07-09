@@ -1,10 +1,9 @@
-[gd_resource type="Resource" script_class="PetConfig" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="PetConfig" format=3 uid="uid://f24ibtge70uc"]
 
-[ext_resource type="Script" path="res://pet_config.gd" id="1_cfg"]
+[ext_resource type="Script" uid="uid://cxqsdcxnuykok" path="res://pet_config.gd" id="1_cfg"]
 
 [resource]
 script = ExtResource("1_cfg")
-scale = 5
 aliases = {
 "appear": "appear",
 "dash": "sprint",
@@ -30,17 +29,11 @@ wander_weight = 28
 follow_weight = 16
 jump_weight = 0
 idle_delay = 45
-zoomies_weight = 12
-zoomies_cooldown_sec = 20.0
-zoomies_duration_sec = 10.0
-zoomies_speed_mult = 2.5
-retreat_interval_sec = 0.0
-jiggle_reaction = "follow"
-follow_reach = "play"
-follow_cursor = true
-gravity = true
 wander_speed = 2
 follow_speed = 6
+zoomies_weight = 12
+zoomies_speed_mult = 2.0
+follow_reach = "play"
 alert_weights = {
 "follow": 2.0,
 "nap": 0.0,

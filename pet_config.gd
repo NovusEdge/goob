@@ -8,7 +8,7 @@ extends Resource
 ## --- Visual ---------------------------------------------------------------
 ## Optional: if set, overrides the AnimatedSprite2D's own SpriteFrames.
 @export var sprite_frames: SpriteFrames
-@export var scale: int = 5
+@export var scale: int = 6
 
 ## --- Mapping --------------------------------------------------------------
 ## Engine behaviour name -> the animation your SpriteFrames actually has.

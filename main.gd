@@ -41,6 +41,7 @@ var grabbing := false
 var grab_off := Vector2i.ZERO
 
 var mood_timer := 0
+var debug_layer: CanvasLayer = null
 var debug_label: Label = null
 
 func _ready() -> void:
@@ -99,8 +100,10 @@ func _ready() -> void:
 	pet = PetBrain.new()
 	pet.setup(usable.end.x, usable.end.y, body_w, body_h, config, lens, _resolve("play") != "idle")
 
-	if _debug_enabled():
-		_make_debug_label()
+	# DEBUG=true (env var or .env) reveals the authored state panel (top-right).
+	debug_layer = $Debug
+	debug_label = $Debug/State
+	debug_layer.visible = _debug_enabled()
 
 func _find_sprite() -> AnimatedSprite2D:
 	for c in get_children():
@@ -121,25 +124,6 @@ func _debug_enabled() -> bool:
 		if idx > 0 and line.substr(0, idx).strip_edges() == "DEBUG":
 			return line.substr(idx + 1).strip_edges().to_lower() in ["true", "1", "yes"]
 	return false
-
-func _make_debug_label() -> void:
-	var panel := PanelContainer.new()
-	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0, 0, 0, 0.6)
-	sb.set_corner_radius_all(6)
-	sb.set_content_margin_all(8)
-	panel.add_theme_stylebox_override("panel", sb)
-	var scr := DisplayServer.screen_get_size()
-	panel.position = Vector2(scr.x - 250, 8)
-	panel.custom_minimum_size = Vector2(230, 0)
-
-	debug_label = Label.new()
-	debug_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	debug_label.add_theme_font_size_override("font_size", 15)
-	debug_label.add_theme_color_override("font_color", Color.WHITE)
-	panel.add_child(debug_label)
-	add_child(panel)
 
 func _setup_window() -> void:
 	get_viewport().transparent_bg = true
@@ -196,7 +180,7 @@ func _physics_process(_dt: float) -> void:
 
 	_update_passthrough()
 
-	if debug_label != null:
+	if debug_layer.visible:
 		var s := pet.state
 		if s == "timed":
 			s = "timed:" + pet.t_anim

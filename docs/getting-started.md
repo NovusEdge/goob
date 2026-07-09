@@ -66,3 +66,4 @@ Sprite packs included:
 
 - **85-animation cat** by [BowPixel](https://bowpixel.itch.io/meow-cat-85-animation)
 - **Simple cat** by [Elthen](https://elthen.itch.io/2d-pixel-art-cat-sprites)
+- **Emote speech bubbles (32p)** by [Pooklea](https://pooklea.itch.io/emote-speech-bubble-32p)
