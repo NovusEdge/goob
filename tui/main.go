@@ -29,7 +29,7 @@ type model struct {
 
 	stats    Stats
 	statsErr error
-	w        int
+	w, h     int
 }
 
 func tickCmd() tea.Cmd {
@@ -49,8 +49,8 @@ func initialModel() model {
 	return model{
 		pet:         newService("pet", "run", root),
 		daemon:      newService("daemon", "daemon", root),
-		petSpark:    sparkline.New(28, 3),
-		daemonSpark: sparkline.New(28, 3),
+		petSpark:    sparkline.New(24, 2),
+		daemonSpark: sparkline.New(24, 2),
 		logs:        vp,
 		statsErr:    errors.New("connecting…"),
 	}
@@ -82,9 +82,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case tea.WindowSizeMsg:
-		m.w = msg.Width
-		m.logs.Width = msg.Width - 2
-		m.logs.Height = max(3, msg.Height-13)
+		m.w, m.h = msg.Width, msg.Height
+		m.logs.Width = max(20, msg.Width-4)   // full width minus log panel border+padding
+		m.logs.Height = max(3, msg.Height-12) // rows left under the top row + footer
 	case tickMsg:
 		// sampleCPU walks /proc synchronously on the Update goroutine each tick;
 		// acceptable because the pet/daemon process trees are tiny.
@@ -113,20 +113,35 @@ var (
 func statusLine(s *Service, runKey, stopKey string) string {
 	dot, state := downStyle.Render("○"), "stopped"
 	if s.running() {
-		dot, state = upStyle.Render("●"), fmt.Sprintf("running  pid %d", s.pid())
+		dot, state = upStyle.Render("●"), fmt.Sprintf("pid %d", s.pid())
 	}
-	return fmt.Sprintf("%-7s %s %-20s  [%s] run  [%s] stop",
-		s.name, dot, state, runKey, stopKey)
+	return fmt.Sprintf("%-7s %s %-12s [%s]run [%s]stop", s.name, dot, state, runKey, stopKey)
 }
 
 func (m model) View() string {
-	header := panelStyle.Width(58).Render(strings.Join([]string{
+	if m.w == 0 {
+		return "starting…"
+	}
+	// Three panels share the top row across the full width. Each bordered+padded
+	// panel adds 4 cols (border 2 + padding 2), so content widths sum to w-12.
+	// cpu just needs to hold the 24-wide sparkline; status/info take the rest.
+	statusW, cpuW := 42, 28
+	if statusW+cpuW+16 > m.w-12 { // narrow terminal: shrink to fit
+		statusW = max(24, (m.w-12)*4/10)
+		cpuW = 28
+	}
+	infoW := m.w - 12 - statusW - cpuW
+	if infoW < 16 {
+		infoW = 16
+	}
+
+	status := panelStyle.Width(statusW).Render(strings.Join([]string{
 		titleStyle.Render("goob control"),
 		statusLine(m.pet, "r", "s"),
 		statusLine(m.daemon, "d", "x"),
 	}, "\n"))
 
-	cpu := panelStyle.Width(34).Render(strings.Join([]string{
+	cpu := panelStyle.Width(cpuW).Render(strings.Join([]string{
 		titleStyle.Render("cpu"),
 		fmt.Sprintf("pet  %5.1f%%", m.pet.cpu),
 		m.petSpark.View(),
@@ -134,21 +149,21 @@ func (m model) View() string {
 		m.daemonSpark.View(),
 	}, "\n"))
 
-	daemonInfo := "daemon unreachable"
+	daemonInfo := downStyle.Render("unreachable")
 	if m.statsErr == nil {
 		daemonInfo = strings.Join([]string{
-			fmt.Sprintf("model  %s", m.stats.Model),
-			fmt.Sprintf("ticks  %d", m.stats.Ticks),
-			fmt.Sprintf("spend  $%.4f", m.stats.Spend),
-			fmt.Sprintf("last   %.0fms", m.stats.Latency),
+			fmt.Sprintf("model %s", m.stats.Model),
+			fmt.Sprintf("ticks %d", m.stats.Ticks),
+			fmt.Sprintf("spend $%.4f", m.stats.Spend),
+			fmt.Sprintf("last  %.0fms", m.stats.Latency),
 		}, "\n")
 	}
-	info := panelStyle.Width(22).Render(titleStyle.Render("daemon") + "\n" + daemonInfo)
+	info := panelStyle.Width(infoW).Render(titleStyle.Render("daemon") + "\n" + daemonInfo)
 
-	mid := lipgloss.JoinHorizontal(lipgloss.Top, cpu, info)
-	logs := panelStyle.Width(58).Render(titleStyle.Render("daemon logs") + "\n" + m.logs.View())
+	top := lipgloss.JoinHorizontal(lipgloss.Top, status, cpu, info)
+	logs := panelStyle.Width(m.w - 4).Render(titleStyle.Render("daemon logs") + "\n" + m.logs.View())
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, mid, logs,
+	return lipgloss.JoinVertical(lipgloss.Left, top, logs,
 		downStyle.Render("[r/s] pet  [d/x] daemon  [q] quit"))
 }
 
