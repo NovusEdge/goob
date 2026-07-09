@@ -5,12 +5,19 @@ extends Node2D
 # on for GTK, but here it's trivial). Mouse passthrough is clipped to the cat's
 # rect so the rest of the desktop stays click-through.
 
-const MANIFEST_PATH := "res://assets/cat-grey.json"
-const SPRITE_PATH := "res://assets/cat-grey.png"
 const SCALE := 5
 
-# Canonical fallback chain (port of sprite.Resolve): only "idle" is required,
-# everything else degrades toward it so BYO sheets just work.
+# Animations are authored in the Godot SpriteFrames editor (the AnimatedSprite2D
+# child of Main). The state machine speaks canonical names; ALIAS bridges those
+# onto the authored animation names, and FALLBACK degrades anything still
+# unmatched toward idle. Only "idle" has to exist. Add an alias when you author a
+# new animation under a friendlier name (e.g. run -> running).
+const ALIAS := {
+	"idle2": "idle", "walk": "walking", "walk2": "walking",
+	"run": "running", "chase": "running", "pounce": "sprint",
+	"spawn": "appear", "sleep": "sleeping",
+	"clean": "scratch", "clean2": "scratch", "paw": "scratch",
+}
 const FALLBACK := {
 	"idle2": "idle", "walk": "idle", "walk2": "walk", "run": "walk",
 	"pounce": "paw", "paw": "idle", "sit": "idle", "sit2": "sit",
@@ -20,9 +27,14 @@ const FALLBACK := {
 	"putdown": "idle", "held": "sit", "held2": "held",
 }
 
+# Every canonical animation the state machine can emit — used to precompute hold
+# durations from the authored frame counts.
+const CANON := ["spawn", "idle", "idle2", "walk", "walk2", "run", "pounce",
+	"sit", "sit2", "loaf", "sleep", "clean", "clean2", "stretch", "yawn",
+	"meow", "roll", "jump", "scared", "pickup", "putdown", "held", "held2", "paw"]
+
 var pet: PetBrain
 var sprite: AnimatedSprite2D
-var manifest: Dictionary
 var frame_w := 32
 var frame_h := 32
 var scaled_w := 160
@@ -39,24 +51,30 @@ var mood_timer := 0
 func _ready() -> void:
 	_setup_window()
 
-	manifest = _load_manifest(MANIFEST_PATH)
-	frame_w = int(manifest.frameSize[0])
-	frame_h = int(manifest.frameSize[1])
+	sprite = _find_sprite()
+	if sprite == null or sprite.sprite_frames == null:
+		push_error("main.gd: need an AnimatedSprite2D child with authored SpriteFrames")
+		return
+	sprite.scale = Vector2(SCALE, SCALE)
+
+	# frame size from the first authored frame (all frames are the same size)
+	var tex := sprite.sprite_frames.get_frame_texture(_resolve("idle"), 0)
+	if tex != null:
+		frame_w = tex.get_width()
+		frame_h = tex.get_height()
 	scaled_w = frame_w * SCALE
 	scaled_h = frame_h * SCALE
 
-	sprite = _find_sprite()
-	if sprite == null:
-		push_error("main.gd: no AnimatedSprite2D child found")
-		return
-	sprite.sprite_frames = _build_frames(load(SPRITE_PATH), manifest)
-	sprite.scale = Vector2(SCALE, SCALE)
+	# hold-state durations derive from the authored frame counts + fps
+	var lens := {}
+	for c in CANON:
+		lens[c] = _anim_ticks(_resolve(c))
 
 	# Bound the cat to the usable area (excludes panels/taskbars) so it doesn't
 	# walk under a taskbar that's rendered on a compositor layer above us.
 	var usable := DisplayServer.screen_get_usable_rect()
 	pet = PetBrain.new()
-	pet.setup(usable.end.x, usable.end.y, scaled_w, scaled_h, _loop_lengths(manifest))
+	pet.setup(usable.end.x, usable.end.y, scaled_w, scaled_h, lens)
 
 func _find_sprite() -> AnimatedSprite2D:
 	for c in get_children():
@@ -146,46 +164,34 @@ func _update_passthrough() -> void:
 	])
 	DisplayServer.window_set_mouse_passthrough(poly)
 
-func _resolve(name: String) -> String:
-	var n := name
-	for _i in FALLBACK.size() + 1:
-		if manifest.states.has(n):
+# Map a canonical state name onto an animation the authored SpriteFrames has:
+# direct name, then ALIAS, then walk the FALLBACK chain toward idle.
+func _resolve(state_name: String) -> String:
+	var sf := sprite.sprite_frames
+	var n := state_name
+	for _i in FALLBACK.size() + 2:
+		if sf.has_animation(n):
 			return n
-		if not FALLBACK.has(n):
+		if ALIAS.has(n) and sf.has_animation(ALIAS[n]):
+			return ALIAS[n]
+		if FALLBACK.has(n):
+			n = FALLBACK[n]
+		else:
 			break
-		n = FALLBACK[n]
-	return "idle"
+	if sf.has_animation("idle"):
+		return "idle"
+	var names := sf.get_animation_names()
+	return names[0] if names.size() > 0 else "idle"
 
-# --- sprite setup ---
-
-func _load_manifest(path: String) -> Dictionary:
-	var f := FileAccess.open(path, FileAccess.READ)
-	return JSON.parse_string(f.get_as_text())
-
-func _build_frames(tex: Texture2D, m: Dictionary) -> SpriteFrames:
-	var fw := int(m.frameSize[0])
-	var fh := int(m.frameSize[1])
-	var sf := SpriteFrames.new()
-	sf.remove_animation("default")
-	for name in m.states:
-		var a: Dictionary = m.states[name]
-		sf.add_animation(name)
-		sf.set_animation_speed(name, a.fps)
-		sf.set_animation_loop(name, true)
-		for i in int(a.frames):
-			var at := AtlasTexture.new()
-			at.atlas = tex
-			at.region = Rect2(i * fw, int(a.row) * fh, fw, fh)
-			sf.add_frame(name, at)
-	return sf
-
-func _loop_lengths(m: Dictionary) -> Dictionary:
-	var out := {}
-	for name in m.states:
-		var a: Dictionary = m.states[name]
-		var fps := int(a.fps)
-		out[name] = int(a.frames) * (60 / fps) if fps > 0 else 0
-	return out
+# One full animation loop in 60Hz physics ticks (matches _physics_process rate).
+func _anim_ticks(anim: String) -> int:
+	var sf := sprite.sprite_frames
+	if not sf.has_animation(anim):
+		return 0
+	var fps := sf.get_animation_speed(anim)
+	if fps <= 0:
+		return 0
+	return int(sf.get_frame_count(anim) * (60.0 / fps))
 
 # --- sysmon: mood from system state (port of internal/sysmon) ---
 
@@ -207,13 +213,13 @@ func _building() -> bool:
 	if d == null:
 		return false
 	d.list_dir_begin()
-	var name := d.get_next()
-	while name != "":
-		if name.is_valid_int():
-			var comm := _read_text("/proc/%s/comm" % name).strip_edges()
+	var entry := d.get_next()
+	while entry != "":
+		if entry.is_valid_int():
+			var comm := _read_text("/proc/%s/comm" % entry).strip_edges()
 			if comm in WATCH:
 				return true
-		name = d.get_next()
+		entry = d.get_next()
 	return false
 
 func _battery_pct() -> int:
@@ -245,11 +251,11 @@ func _glob(dir: String, prefix: String) -> Array:
 	if d == null:
 		return out
 	d.list_dir_begin()
-	var name := d.get_next()
-	while name != "":
-		if name.begins_with(prefix):
-			out.append("%s/%s" % [dir, name])
-		name = d.get_next()
+	var entry := d.get_next()
+	while entry != "":
+		if entry.begins_with(prefix):
+			out.append("%s/%s" % [dir, entry])
+		entry = d.get_next()
 	return out
 
 func _read_text(path: String) -> String:
