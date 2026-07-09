@@ -10,3 +10,7 @@ docs/superpowers/
 
 # Local env (DEBUG toggle etc.)
 .env
+
+# Python bytecode
+__pycache__/
+*.pyc
