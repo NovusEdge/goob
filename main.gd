@@ -5,7 +5,7 @@ extends Node2D
 # on for GTK, but here it's trivial). Mouse passthrough is clipped to the cat's
 # rect so the rest of the desktop stays click-through.
 
-const DEFAULT_CONFIG := "res://cat.tres"
+const DEFAULT_CONFIG := "res://playful_cat.tres"
 
 # Per-creature data. Set it in the Inspector to swap creatures; falls back to the
 # bundled cat if unset. See docs/behavior-model.md and pet_config.gd.
@@ -15,11 +15,12 @@ const DEFAULT_CONFIG := "res://cat.tres"
 # onto authored animations; FALLBACK degrades anything unmatched toward idle
 # (the one animation every creature must have).
 const ENGINE_STATES := ["appear", "idle", "wander", "follow", "dash", "jump",
-	"grab", "carry", "drop", "startle"]
+	"grab", "carry", "drop", "startle", "sleep", "play", "sad", "pet"]
 const FALLBACK := {
 	"idle2": "idle", "wander": "idle", "follow": "wander", "dash": "follow",
 	"appear": "idle", "jump": "idle", "grab": "idle", "carry": "idle",
-	"drop": "idle", "startle": "idle",
+	"drop": "idle", "startle": "idle", "sleep": "idle", "play": "idle",
+	"sad": "idle", "pet": "idle",
 }
 
 var pet: PetBrain
@@ -28,6 +29,11 @@ var frame_w := 32
 var frame_h := 32
 var scaled_w := 160
 var scaled_h := 160
+# The pet's visible *body* — the opaque pixels within the padded frame. All
+# movement/clamping/clicking uses this; only drawing uses the full frame.
+var body_w := 160
+var body_h := 160
+var body_off := Vector2i.ZERO  # body's top-left within the frame (scaled px)
 var last_anim := ""
 
 var mouse_pos := Vector2i(-1, -1)
@@ -36,6 +42,31 @@ var grabbing := false
 var grab_off := Vector2i.ZERO
 
 var mood_timer := 0
+var debug_layer: CanvasLayer = null
+var debug_label: Label = null
+
+const BUBBLE_TICKS := 240   # ~4s at 60fps
+var bubble_layer: CanvasLayer = null
+var bubble_panel: PanelContainer = null
+var bubble_label: Label = null
+var bubble_left := 0
+var last_say := ""          # de-dup: never show the same line twice in a row
+
+const COMMENT_COOLDOWN_TICKS := 1200   # ~20s at 60fps
+var commenter: Commenter = null
+var frame := 0
+var last_comment_frame := -100000
+
+const DAEMON_URL := "http://127.0.0.1:8787/tick"
+var http: HTTPRequest = null
+var in_flight := false
+var pending_mood := 0
+
+func _mood_key(m: int) -> String:
+	match m:
+		1: return "alert"
+		2: return "tired"
+		_: return "neutral"
 
 func _ready() -> void:
 	_setup_window()
@@ -65,6 +96,21 @@ func _ready() -> void:
 	scaled_w = frame_w * config.scale
 	scaled_h = frame_h * config.scale
 
+	# The art rarely fills the whole frame — find its opaque bounds so the pet is
+	# positioned/clamped/clicked by its visible body, not the transparent padding
+	# (otherwise it "stops" a frame-of-padding short of the screen edge).
+	body_w = scaled_w
+	body_h = scaled_h
+	body_off = Vector2i.ZERO
+	if tex != null:
+		var img := tex.get_image()
+		if img != null:
+			var used := img.get_used_rect()
+			if used.size.x > 0 and used.size.y > 0:
+				body_off = Vector2i(used.position.x * config.scale, used.position.y * config.scale)
+				body_w = used.size.x * config.scale
+				body_h = used.size.y * config.scale
+
 	# loop lengths for every authored animation + every engine behaviour
 	var lens := {}
 	for a in sprite.sprite_frames.get_animation_names():
@@ -76,13 +122,66 @@ func _ready() -> void:
 	# walk under a taskbar that's rendered on a compositor layer above us.
 	var usable := DisplayServer.screen_get_usable_rect()
 	pet = PetBrain.new()
-	pet.setup(usable.end.x, usable.end.y, scaled_w, scaled_h, config, lens)
+	pet.setup(usable.end.x, usable.end.y, body_w, body_h, config, lens, _resolve("play") != "idle")
+
+	# DEBUG=true (env var or .env) reveals the authored state panel (top-right).
+	debug_layer = $Debug
+	debug_label = $Debug/State
+	debug_layer.visible = _debug_enabled()
+	_make_bubble()
+	commenter = Commenter.new()
+
+	http = HTTPRequest.new()
+	http.timeout = 6.0
+	add_child(http)
+	http.request_completed.connect(_on_tick_completed)
+
+func _make_bubble() -> void:
+	bubble_layer = CanvasLayer.new()
+	add_child(bubble_layer)
+	bubble_panel = PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.1, 0.1, 0.12, 0.92)
+	sb.set_corner_radius_all(10)
+	sb.set_content_margin_all(8)
+	bubble_panel.add_theme_stylebox_override("panel", sb)
+	bubble_layer.add_child(bubble_panel)
+	bubble_label = Label.new()
+	bubble_label.add_theme_color_override("font_color", Color.WHITE)
+	bubble_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	bubble_label.custom_minimum_size = Vector2(0, 0)
+	bubble_label.size = Vector2(220, 0)
+	bubble_panel.add_child(bubble_label)
+	bubble_layer.visible = false
+	# ponytail: PanelContainer bubble; swap in the Pooklea nine-patch art later
+	# once we've confirmed it sizes to arbitrary text.
+
+func _show_bubble(text: String) -> void:
+	if text == "":
+		return
+	bubble_label.text = text
+	bubble_left = BUBBLE_TICKS
+	bubble_layer.visible = true
 
 func _find_sprite() -> AnimatedSprite2D:
 	for c in get_children():
 		if c is AnimatedSprite2D:
 			return c
 	return null
+
+# DEBUG=true (env var or a .env line) shows a live state readout, top-right.
+func _debug_enabled() -> bool:
+	if OS.get_environment("DEBUG").to_lower() in ["true", "1", "yes"]:
+		return true
+	var f := FileAccess.open("res://.env", FileAccess.READ)
+	if f == null:
+		return false
+	while not f.eof_reached():
+		var line := f.get_line().strip_edges()
+		var idx := line.find("=")
+		if idx > 0 and line.substr(0, idx).strip_edges() == "DEBUG":
+			return line.substr(idx + 1).strip_edges().to_lower() in ["true", "1", "yes"]
+	return false
 
 func _setup_window() -> void:
 	get_viewport().transparent_bg = true
@@ -95,38 +194,46 @@ func _setup_window() -> void:
 	w.position = Vector2i.ZERO
 
 func _physics_process(_dt: float) -> void:
-	# ~every 2s, sample the machine's mood
+	frame += 1
+	# ~every 2s, sample the machine's mood; comment on transitions.
 	mood_timer += 1
 	if mood_timer >= 120:
 		mood_timer = 0
-		pet.set_mood(_read_mood())
+		var m := _read_mood()
+		if m != pet.mood:
+			_on_mood_edge(m)
+		pet.set_mood(m)
 
-	var cx := -1
-	var cy := -1
-	if mouse_pos.x >= 0 and (_over_cat(mouse_pos) or mouse_btn != 0):
-		cx = mouse_pos.x
-		cy = mouse_pos.y
+	# Global cursor: mouse_get_position() tracks the pointer across the whole
+	# screen (fullscreen overlay), so the pet can follow it anywhere. Clicks still
+	# pass through except on the cat, so button state comes from _input.
+	var gpos := DisplayServer.mouse_get_position()
+	var cx := gpos.x
+	var cy := gpos.y
 
-	# drag / scare — window is stationary so mouse_pos is absolute, no feedback
+	# drag / scare — button state is from clicks on the cat; position is global.
 	if mouse_btn == 1:
-		if not grabbing and _over_cat(mouse_pos):
+		if not grabbing and _over_cat(gpos):
 			grabbing = true
-			grab_off = Vector2i(mouse_pos.x - pet.x, mouse_pos.y - pet.y)
+			grab_off = Vector2i(gpos.x - pet.x, gpos.y - pet.y)
 		if grabbing:
-			pet.hold(mouse_pos.x - grab_off.x + scaled_w / 2, mouse_pos.y - grab_off.y + scaled_h / 2)
+			pet.hold(gpos.x - grab_off.x + body_w / 2, gpos.y - grab_off.y + body_h / 2)
 	elif pet.held():
 		grabbing = false
 		pet.release()
-	elif mouse_btn == 2 and _over_cat(mouse_pos):
+	elif mouse_btn == 2 and _over_cat(gpos):
 		grabbing = false
-		pet.scare()
+		pet.pet_touch()
 	else:
 		grabbing = false
 
 	pet.update(cx, cy)
 
-	# AnimatedSprite2D is centered; pet.x/y is the top-left, like the Go version
-	sprite.position = Vector2(pet.x + scaled_w / 2.0, pet.y + scaled_h / 2.0)
+	# pet.x/y is the body's top-left; place the (centered) frame so the body lands
+	# there, accounting for the transparent padding offset inside the frame.
+	sprite.position = Vector2(
+		pet.x - body_off.x + scaled_w / 2.0,
+		pet.y - body_off.y + scaled_h / 2.0)
 	sprite.flip_h = pet.facing_left
 
 	var a := _resolve(pet.anim)
@@ -135,6 +242,27 @@ func _physics_process(_dt: float) -> void:
 		sprite.play(a)
 
 	_update_passthrough()
+
+	if bubble_layer.visible:
+		bubble_left -= 1
+		if bubble_left <= 0:
+			bubble_layer.visible = false
+		else:
+			var sz := bubble_panel.size
+			var bx: float = pet.x + body_w / 2.0 - sz.x / 2.0
+			var by: float = pet.y - sz.y - 8.0
+			var scr := DisplayServer.screen_get_size()
+			bx = clampf(bx, 0.0, float(scr.x) - sz.x)
+			by = clampf(by, 0.0, float(scr.y) - sz.y)
+			bubble_panel.position = Vector2(bx, by)
+
+	if debug_layer.visible:
+		var s := pet.state
+		if s == "clip":
+			s = "clip:" + pet.clip_anim
+		var moods := ["neutral", "alert", "tired"]
+		debug_label.text = "state: %s\nanim:  %s\nmood:  %s\npos:   %d,%d" % [
+			s, _resolve(pet.anim), moods[pet.mood], pet.x, pet.y]
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
@@ -153,16 +281,16 @@ func mouse_btn_index(b: int) -> int:
 	return MOUSE_BUTTON_LEFT if b == 1 else MOUSE_BUTTON_RIGHT
 
 func _over_cat(p: Vector2i) -> bool:
-	return p.x >= pet.x and p.x < pet.x + scaled_w and p.y >= pet.y and p.y < pet.y + scaled_h
+	return p.x >= pet.x and p.x < pet.x + body_w and p.y >= pet.y and p.y < pet.y + body_h
 
 func _update_passthrough() -> void:
 	var x := pet.x
 	var y := pet.y
 	var poly := PackedVector2Array([
 		Vector2(x, y),
-		Vector2(x + scaled_w, y),
-		Vector2(x + scaled_w, y + scaled_h),
-		Vector2(x, y + scaled_h),
+		Vector2(x + body_w, y),
+		Vector2(x + body_w, y + body_h),
+		Vector2(x, y + body_h),
 	])
 	DisplayServer.window_set_mouse_passthrough(poly)
 
@@ -200,6 +328,54 @@ func _anim_ticks(anim: String) -> int:
 const WATCH := ["go", "gcc", "cc1", "clang", "rustc", "cargo", "node", "npm",
 	"webpack", "tsc", "make", "cmake", "ninja", "docker", "gradle", "mvn",
 	"python", "ld"]
+
+func _on_mood_edge(new_mood: int) -> void:
+	if frame - last_comment_frame < COMMENT_COOLDOWN_TICKS:
+		return
+	last_comment_frame = frame
+	if in_flight:
+		return                          # one HTTPRequest node = one request
+	_request_tick(new_mood)
+
+func _request_tick(mood: int) -> void:
+	pending_mood = mood
+	var body := JSON.stringify({
+		"pet_state": pet.state,
+		"mood": _mood_key(mood),
+		"event": "mood_changed",
+		"user_text": null,
+	})
+	var err := http.request(DAEMON_URL, ["Content-Type: application/json"],
+		HTTPClient.METHOD_POST, body)
+	if err != OK:
+		_fallback_comment(mood)          # daemon unreachable -> canned
+	else:
+		in_flight = true
+
+func _on_tick_completed(result: int, code: int, _headers: PackedStringArray,
+		body: PackedByteArray) -> void:
+	in_flight = false
+	if result == HTTPRequest.RESULT_SUCCESS and code == 200:
+		var data = JSON.parse_string(body.get_string_from_utf8())
+		if typeof(data) == TYPE_DICTIONARY:
+			var st := String(data.get("state", ""))
+			var applied := st != "" and pet.drive_state(st)
+			var say := String(data.get("say", ""))
+			if say.strip_edges() != "" and say != last_say:
+				last_say = say
+				_show_bubble(say)
+			elif st != "" and not applied:
+				# LLM asked for an action that was rejected and said nothing -> canned
+				_fallback_comment(pending_mood)
+			return
+	_fallback_comment(pending_mood)      # any failure -> canned, never silence
+
+# Canned comment for a mood (also the fallback when the daemon is unreachable).
+func _fallback_comment(mood: int) -> void:
+	var line := commenter.pick(_mood_key(mood))
+	if line != "" and line != last_say:
+		last_say = line
+		_show_bubble(line)
 
 func _read_mood() -> int:
 	var pct := _battery_pct()

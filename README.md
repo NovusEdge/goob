@@ -1,8 +1,10 @@
 # goob — lil vro 🥀
 
 A desktop pet cat that lives on your screen — wanders, naps, chases your cursor,
-and reacts to what your machine is doing. Built in **Godot 4**. Bring your own
-spritesheets.
+and reacts to what your machine is doing — commenting in a speech bubble, from a
+built-in line list or (optionally) a local/cloud LLM daemon. See
+[Getting Started](docs/getting-started.md#llm-commentary-optional). Built in
+**Godot 4**. Bring your own spritesheets.
 
 ## Run
 
@@ -16,8 +18,7 @@ It spawns a fullscreen, transparent, always-on-top overlay. The window is
 click-through everywhere except the cat itself, so your desktop stays usable.
 
 - **Left-drag** the cat to pick it up and move it.
-- **Right-click** to startle it.
-- **Jiggle your cursor** near it to summon a playful chase.
+- **Right-click** to pet it on the head.
 
 ## How it works
 
@@ -65,6 +66,7 @@ works and a full one shines.
 Sprite packs included:
 - **85-animation cat** by [BowPixel](https://bowpixel.itch.io/meow-cat-85-animation) — grey & ginger
 - **Simple cat** by [Elthen](https://elthen.itch.io/2d-pixel-art-cat-sprites)
+- **Emote speech bubbles (32p)** by [Pooklea](https://pooklea.itch.io/emote-speech-bubble-32p)
 
 Go support these artists!
 

@@ -4,3 +4,13 @@
 # Godot export artifacts
 *.exe
 export_presets.cfg
+
+# Local planning docs (specs, implementation plans) — not part of the project
+docs/superpowers/
+
+# Local env (DEBUG toggle etc.)
+.env
+
+# Python bytecode
+__pycache__/
+*.pyc

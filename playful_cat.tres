@@ -1,0 +1,48 @@
+[gd_resource type="Resource" script_class="PetConfig" format=3 uid="uid://f24ibtge70uc"]
+
+[ext_resource type="Script" uid="uid://cxqsdcxnuykok" path="res://pet_config.gd" id="1_cfg"]
+
+[resource]
+script = ExtResource("1_cfg")
+aliases = {
+"appear": "appear",
+"dash": "sprint",
+"follow": "running",
+"idle": "idle",
+"sleep": "sleeping",
+"startle": "scared",
+"wander": "walking"
+}
+actions = [{
+"anim": "sleeping",
+"loops": 4,
+"name": "nap",
+"weight": 3
+}, {
+"anim": "scratch",
+"loops": 3,
+"name": "groom",
+"weight": 5
+}]
+idle_weight = 6
+wander_weight = 28
+follow_weight = 16
+jump_weight = 0
+idle_delay = 45
+wander_speed = 2
+follow_speed = 6
+zoomies_weight = 12
+zoomies_speed_mult = 2.0
+follow_reach = "play"
+alert_weights = {
+"follow": 2.0,
+"nap": 0.0,
+"wander": 1.5,
+"zoomies": 1.5
+}
+tired_weights = {
+"follow": 0.0,
+"nap": 2.5,
+"wander": 0.4,
+"zoomies": 0.0
+}
