@@ -1,0 +1,18 @@
+{
+  "neutral": [
+    "just vibing.",
+    "another quiet moment on the desktop.",
+    "i see you.",
+    "what are we building today?"
+  ],
+  "alert": [
+    "ooh, a build! go go go.",
+    "compiler's cooking.",
+    "something's churning over here."
+  ],
+  "tired": [
+    "battery's getting low... or is it the CPU sweating?",
+    "it's warm in here.",
+    "maybe plug in? just saying."
+  ]
+}

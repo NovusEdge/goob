@@ -17,3 +17,7 @@ edit:
 # headless parse/import check (also registers new class_names)
 check:
     {{godot}} --headless --path . --editor --quit
+
+# headless unit tests
+test:
+    {{godot}} --headless --path . --script res://tests/test_commenter.gd
