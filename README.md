@@ -53,12 +53,12 @@ works and a full one shines.
 
 - **Generic companion config** — decouple "cat" into a per-creature `PetConfig`
   resource (mapping + actions + personality), so any sprite works with no code.
-  Design: `docs/BEHAVIOR-MODEL.md`.
+  Design: `docs/behavior-model.md`.
 - **Config UI** for the high-level knobs (scale, follow-cursor, action weights…).
   Open question on form: in-app Godot settings panel (recommended, one stack) vs.
   a standalone launcher/wizard. TBD.
-- **LLM integration** — voice input → the pet picks states and replies via chat
-  bubbles (TTS later). See `docs/LLM-BRAINSTORM.md`.
+- **LLM integration** - voice input, the pet picks states and replies via chat
+  bubbles (TTS later). See `docs/roadmap.md`.
 
 ## Credits
 
