@@ -52,10 +52,12 @@ var bubble_label: Label = null
 var bubble_left := 0
 var last_say := ""          # de-dup: never show the same line twice in a row
 
-const COMMENT_COOLDOWN_TICKS := 1200   # ~20s at 60fps
+const COMMENT_COOLDOWN_TICKS := 1200   # ~20s at 60fps — min gap between comments
+const HEARTBEAT_TICKS := 5400          # ~90s — pipe up on its own even with no mood change
 var commenter: Commenter = null
 var frame := 0
 var last_comment_frame := -100000
+var last_heartbeat_frame := 0
 
 const DAEMON_URL := "http://127.0.0.1:8787/tick"
 var http: HTTPRequest = null
@@ -163,6 +165,17 @@ func _show_bubble(text: String) -> void:
 	bubble_label.text = text
 	bubble_left = BUBBLE_TICKS
 	bubble_layer.visible = true
+	_position_bubble()   # place it immediately so a bubble shown mid-zoomies has a spot
+
+# Anchor the bubble above the pet's body, clamped on-screen.
+func _position_bubble() -> void:
+	var sz := bubble_panel.size
+	var bx: float = pet.x + body_w / 2.0 - sz.x / 2.0
+	var by: float = pet.y - sz.y - 8.0
+	var scr := DisplayServer.screen_get_size()
+	bx = clampf(bx, 0.0, float(scr.x) - sz.x)
+	by = clampf(by, 0.0, float(scr.y) - sz.y)
+	bubble_panel.position = Vector2(bx, by)
 
 func _find_sprite() -> AnimatedSprite2D:
 	for c in get_children():
@@ -202,8 +215,12 @@ func _physics_process(_dt: float) -> void:
 		mood_timer = 0
 		var m := _read_mood()
 		if m != pet.mood:
-			_on_mood_edge(m)
+			_maybe_comment(m, "mood_changed")
 		pet.set_mood(m)
+	# heartbeat: comment on its own periodically, even without a mood change
+	if frame - last_heartbeat_frame >= HEARTBEAT_TICKS:
+		last_heartbeat_frame = frame
+		_maybe_comment(pet.mood, "heartbeat")
 
 	# Global cursor: mouse_get_position() tracks the pointer across the whole
 	# screen (fullscreen overlay), so the pet can follow it anywhere. Clicks still
@@ -248,14 +265,10 @@ func _physics_process(_dt: float) -> void:
 		bubble_left -= 1
 		if bubble_left <= 0:
 			bubble_layer.visible = false
-		else:
-			var sz := bubble_panel.size
-			var bx: float = pet.x + body_w / 2.0 - sz.x / 2.0
-			var by: float = pet.y - sz.y - 8.0
-			var scr := DisplayServer.screen_get_size()
-			bx = clampf(bx, 0.0, float(scr.x) - sz.x)
-			by = clampf(by, 0.0, float(scr.y) - sz.y)
-			bubble_panel.position = Vector2(bx, by)
+		elif pet.state != "zoomies":
+			# While zooming the pet darts too fast to read a tracking bubble —
+			# freeze it where it appeared instead of following.
+			_position_bubble()
 
 	if debug_layer.visible:
 		var s := pet.state
@@ -326,24 +339,28 @@ func _anim_ticks(anim: String) -> int:
 
 # --- sysmon: mood from system state (port of internal/sysmon) ---
 
-const WATCH := ["go", "gcc", "cc1", "clang", "rustc", "cargo", "node", "npm",
-	"webpack", "tsc", "make", "cmake", "ninja", "docker", "gradle", "mvn",
-	"python", "ld"]
+# Compiler/build processes that mean "a real build is running" -> alert mood.
+# Deliberately excludes long-lived runtimes (python, node, go) — they match the
+# daemon itself, editors, and the TUI, which would peg mood at alert forever.
+const WATCH := ["gcc", "cc1", "clang", "rustc", "cargo", "npm", "webpack",
+	"tsc", "make", "cmake", "ninja", "gradle", "mvn", "ld"]
 
-func _on_mood_edge(new_mood: int) -> void:
+# Fire a comment (mood edge or heartbeat), gated by the in-flight guard and the
+# cooldown. A blocked attempt is dropped, not queued.
+func _maybe_comment(mood: int, event: String) -> void:
+	if in_flight:
+		return                          # one HTTPRequest node = one request
 	if frame - last_comment_frame < COMMENT_COOLDOWN_TICKS:
 		return
 	last_comment_frame = frame
-	if in_flight:
-		return                          # one HTTPRequest node = one request
-	_request_tick(new_mood)
+	_request_tick(mood, event)
 
-func _request_tick(mood: int) -> void:
+func _request_tick(mood: int, event: String) -> void:
 	pending_mood = mood
 	var body := JSON.stringify({
 		"pet_state": pet.state,
 		"mood": _mood_key(mood),
-		"event": "mood_changed",
+		"event": event,
 		"user_text": null,
 	})
 	var err := http.request(DAEMON_URL, ["Content-Type: application/json"],
