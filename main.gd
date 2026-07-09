@@ -52,6 +52,17 @@ var bubble_label: Label = null
 var bubble_left := 0
 var last_say := ""          # de-dup: never show the same line twice in a row
 
+const COMMENT_COOLDOWN_TICKS := 1200   # ~20s at 60fps
+var commenter: Commenter = null
+var frame := 0
+var last_comment_frame := -100000
+
+func _mood_key(m: int) -> String:
+	match m:
+		1: return "alert"
+		2: return "tired"
+		_: return "neutral"
+
 func _ready() -> void:
 	_setup_window()
 
@@ -113,6 +124,7 @@ func _ready() -> void:
 	debug_label = $Debug/State
 	debug_layer.visible = _debug_enabled()
 	_make_bubble()
+	commenter = Commenter.new()
 
 func _make_bubble() -> void:
 	bubble_layer = CanvasLayer.new()
@@ -172,11 +184,15 @@ func _setup_window() -> void:
 	w.position = Vector2i.ZERO
 
 func _physics_process(_dt: float) -> void:
-	# ~every 2s, sample the machine's mood
+	frame += 1
+	# ~every 2s, sample the machine's mood; comment on transitions.
 	mood_timer += 1
 	if mood_timer >= 120:
 		mood_timer = 0
-		pet.set_mood(_read_mood())
+		var m := _read_mood()
+		if m != pet.mood:
+			_on_mood_edge(m)
+		pet.set_mood(m)
 
 	# Global cursor: mouse_get_position() tracks the pointer across the whole
 	# screen (fullscreen overlay), so the pet can follow it anywhere. Clicks still
@@ -302,6 +318,19 @@ func _anim_ticks(anim: String) -> int:
 const WATCH := ["go", "gcc", "cc1", "clang", "rustc", "cargo", "node", "npm",
 	"webpack", "tsc", "make", "cmake", "ninja", "docker", "gradle", "mvn",
 	"python", "ld"]
+
+func _on_mood_edge(new_mood: int) -> void:
+	if frame - last_comment_frame < COMMENT_COOLDOWN_TICKS:
+		return
+	last_comment_frame = frame
+	_fallback_comment(new_mood)
+
+# Canned comment for a mood (also the fallback when the daemon is unreachable).
+func _fallback_comment(mood: int) -> void:
+	var line := commenter.pick(_mood_key(mood))
+	if line != "" and line != last_say:
+		last_say = line
+		_show_bubble(line)
 
 func _read_mood() -> int:
 	var pct := _battery_pct()
