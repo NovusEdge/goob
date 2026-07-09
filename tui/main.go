@@ -83,8 +83,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
-		m.logs.Width = max(20, msg.Width-10)  // side margins + log panel border+padding
-		m.logs.Height = max(3, msg.Height-16) // rows left under banner + top row + footer
+		_, rightW := layout(msg.Width - 4)
+		m.logs.Width = rightW                 // right column inner width
+		m.logs.Height = max(3, msg.Height-14) // fills under banner + daemon panel + footer
 	case tickMsg:
 		// sampleCPU walks /proc synchronously on the Update goroutine each tick;
 		// acceptable because the pet/daemon process trees are tiny.
@@ -150,63 +151,71 @@ func short(s string, n int) string {
 	return s
 }
 
+// layout splits the usable width w into a fixed-ish left sidebar and a flexible
+// right column. Two panels each render at contentWidth+2 (border), plus a 1-col
+// gap between columns → leftW + rightW + 5 == w. Both View and the resize
+// handler call this so the viewport width matches what View draws.
+func layout(w int) (leftW, rightW int) {
+	leftW = 38
+	if leftW+34 > w { // narrow terminal: give the sidebar less
+		leftW = max(24, w*2/5)
+	}
+	rightW = w - 5 - leftW
+	if rightW < 24 {
+		rightW = 24
+	}
+	return leftW, rightW
+}
+
 func (m model) View() string {
 	if m.w == 0 {
 		return "\n  starting…"
 	}
 	w := m.w - 4 // usable width inside appStyle's side margins
+	leftW, rightW := layout(w)
+	row := func(l, v string) string { return labelStyle.Width(6).Render(l) + v }
 
 	banner := bannerStyle.Width(w).Render("🐱  goob control panel")
 
-	// Three panels share a row. lipgloss counts padding inside Width(), so each
-	// panel renders at Width+2 (border only) → the three Widths sum to w-6.
-	// cpu holds the 24-wide sparkline; status/info flex.
-	statusW, cpuW := 46, 30
-	if statusW+cpuW+18 > w {
-		statusW = max(24, w*4/10)
-	}
-	infoW := w - 6 - statusW - cpuW
-	if infoW < 18 {
-		infoW = 18
-	}
-
-	status := panel(statusW, cAccent).Render(strings.Join([]string{
+	// Left column: control + cpu, stacked.
+	control := panel(leftW, cAccent).Render(strings.Join([]string{
 		titleStyle.Render("control"),
 		statusLine(m.pet, "r", "s"),
 		statusLine(m.daemon, "d", "x"),
 	}, "\n"))
-
-	row := func(l, v string) string { return labelStyle.Width(6).Render(l) + v }
-	cpu := panel(cpuW, cCyan).Render(strings.Join([]string{
+	cpu := panel(leftW, cCyan).Render(strings.Join([]string{
 		titleStyle.Render("cpu"),
 		row("pet", valStyle.Render(fmt.Sprintf("%5.1f%%", m.pet.cpu))),
 		m.petSpark.View(),
 		row("daem", valStyle.Render(fmt.Sprintf("%5.1f%%", m.daemon.cpu))),
 		m.daemonSpark.View(),
 	}, "\n"))
+	left := lipgloss.NewStyle().MarginRight(1).Render(
+		lipgloss.JoinVertical(lipgloss.Left, control, cpu))
 
+	// Right column: daemon stats above the logs.
 	var infoBody string
 	if m.statsErr != nil {
 		infoBody = downStyle.Render("○ unreachable")
 	} else {
 		infoBody = strings.Join([]string{
-			row("model", valStyle.Render(short(m.stats.Model, infoW-9))),
+			row("model", valStyle.Render(short(m.stats.Model, rightW-9))),
 			row("ticks", valStyle.Render(fmt.Sprintf("%d", m.stats.Ticks))),
 			row("spend", spendStyle.Render(fmt.Sprintf("$%.4f", m.stats.Spend))),
 			row("last", valStyle.Render(fmt.Sprintf("%.0f ms", m.stats.Latency))),
 		}, "\n")
 	}
-	info := panel(infoW, cYellow).Render(titleStyle.Render("daemon") + "\n" + infoBody)
+	info := panel(rightW, cYellow).Render(titleStyle.Render("daemon") + "\n" + infoBody)
+	logs := panel(rightW, cDim).Render(titleStyle.Render("daemon logs") + "\n" + m.logs.View())
+	right := lipgloss.JoinVertical(lipgloss.Left, info, logs)
 
-	top := lipgloss.JoinHorizontal(lipgloss.Top, status, cpu, info)
-	logs := panel(w-2, cDim).Render(
-		titleStyle.Render("daemon logs") + "\n" + m.logs.View())
+	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
 	foot := footStyle.Render(keys("r", "s") + labelStyle.Render(" pet   ") +
 		keys("d", "x") + labelStyle.Render(" daemon   ") +
 		keyStyle.Render("[q]") + labelStyle.Render("quit"))
 
-	return appStyle.Render(lipgloss.JoinVertical(lipgloss.Left, banner, top, logs, foot))
+	return appStyle.Render(lipgloss.JoinVertical(lipgloss.Left, banner, body, foot))
 }
 
 func main() {
