@@ -1,2 +1,6 @@
-/goob
+# Godot 4 import cache — regenerated on open
+.godot/
+
+# Godot export artifacts
 *.exe
+export_presets.cfg
