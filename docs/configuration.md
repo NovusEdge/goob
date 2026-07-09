@@ -105,6 +105,39 @@ A **personality is just a config.** The repo ships three:
 
 Load one by assigning it to the `config` field on the `Main` node in the Inspector.
 
+## Config files
+
+Beyond PetConfig, three plain-text files under `config/` are user-editable and
+don't require the Godot editor:
+
+| File | Edit freely? | Purpose |
+|------|--------------|---------|
+| `PERSONALITY.md` | Yes | The pet's voice/character, fed to the LLM as its personality. Plain prose — no special format. Rewrite it to change how the pet "talks." |
+| `PROMPT.md` | Rarely | The engine contract: fixed system instructions telling the LLM about its read-only tools, the required `emit` output format (an optional short `say` line + an optional `state`), and constraints. Only touch this if you're changing how the daemon fundamentally works — editing it can break structured output. |
+| `comments.json` | Yes | Canned lines shown in canned mode (when no LLM daemon is running), keyed by mood. |
+
+The LLM's full system prompt is `PROMPT.md` + `PERSONALITY.md` composed
+together, so you can rewrite the personality without touching the mechanics.
+If either file is missing or unreadable, the daemon falls back to a built-in
+default.
+
+`comments.json` is keyed by the pet's three moods — `neutral` (default/idle),
+`alert` (a build/dev process is running), `tired` (low battery or hot CPU):
+
+```json
+{
+  "neutral": ["just vibing.", "..."],
+  "alert":   ["ooh, a build!", "..."],
+  "tired":   ["it's warm in here.", "..."]
+}
+```
+
+goob picks a random line for the current mood and won't repeat the same line
+twice in a row. Add your own lines freely.
+
+See [LLM Commentary](llm-commentary.md) for the daemon itself — providers,
+auth, and how comments get triggered.
+
 ## Pickup animation
 
 The engine already drives `grab` → `carry` → `drop` when you drag the pet. They
