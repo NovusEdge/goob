@@ -13,6 +13,10 @@ extends RefCounted
 #   jump/airborne - a hop under gravity
 #   carry   - being held under the cursor
 
+const TURN_PAUSE := 6      # ticks of hesitation before flipping direction
+const SETTLE_BIAS := 1.8   # after moving, likelier to rest next
+const ROUSE_BIAS := 1.3    # after resting, likelier to get moving next
+
 var cfg: PetConfig
 var loop_lens: Dictionary  # animation name -> ticks for one full loop
 
@@ -41,6 +45,9 @@ var prev_cursor_x := 0
 var cursor_dir := 0
 var cursor_seen := false
 var jiggle := 0
+
+var turn_pause := 0
+var last_active := false  # was the last chosen behaviour a mover (wander/follow/jump)?
 
 func setup(sw: int, sh: int, fw: int, fh: int, config: PetConfig, lens: Dictionary) -> void:
 	screen_w = sw
@@ -90,11 +97,9 @@ func update(cursor_x: int, cursor_y: int) -> void:
 				vel_x = 0
 				timer = 0
 			elif dx > 0:
-				vel_x = cfg.wander_speed
-				facing_left = false
+				_move(false, cfg.wander_speed)
 			else:
-				vel_x = -cfg.wander_speed
-				facing_left = true
+				_move(true, cfg.wander_speed)
 		"follow":
 			anim = "follow"
 			if cfg.follow_cursor and cursor_x >= 0 and cursor_y >= 0:
@@ -102,11 +107,9 @@ func update(cursor_x: int, cursor_y: int) -> void:
 				if abs(dx) < 30:
 					_timed("dash", _ticks("dash"), "idle")
 				elif dx > 0:
-					vel_x = cfg.follow_speed
-					facing_left = false
+					_move(false, cfg.follow_speed)
 				else:
-					vel_x = -cfg.follow_speed
-					facing_left = true
+					_move(true, cfg.follow_speed)
 				timer += 1
 				if timer > 300:
 					state = "idle"
@@ -175,6 +178,7 @@ func _decide() -> void:
 	var total := 0.0
 	for i in names.size():
 		weights[i] *= float(mm.get(names[i], 1.0))
+		weights[i] *= _chain_factor(names[i], actions_by_name)
 		if weights[i] < 0.0:
 			weights[i] = 0.0
 		total += weights[i]
@@ -193,6 +197,7 @@ func _decide() -> void:
 	state = "idle"
 
 func _pick(nm: String, action) -> void:
+	last_active = nm in ["wander", "follow", "jump"]
 	if action != null:
 		var a_anim := String(action.get("anim", "idle"))
 		var loops := int(action.get("loops", 1))
@@ -208,6 +213,28 @@ func _pick(nm: String, action) -> void:
 		timer = 0
 	else:
 		state = "idle"
+
+# A pet that just moved tends to settle (rest); a pet that just rested tends to
+# get moving. This makes behaviour read as intentional rhythm, not coin flips.
+func _chain_factor(nm: String, actions_by_name: Dictionary) -> float:
+	var restful := nm == "idle" or actions_by_name.has(nm)
+	if last_active and restful:
+		return SETTLE_BIAS
+	if not last_active and not restful:
+		return ROUSE_BIAS
+	return 1.0
+
+# Move toward a direction, hesitating briefly when it has to turn around so it
+# doesn't twitch back and forth on the spot.
+func _move(want_left: bool, speed: int) -> void:
+	if want_left != facing_left:
+		facing_left = want_left
+		turn_pause = TURN_PAUSE
+	if turn_pause > 0:
+		turn_pause -= 1
+		vel_x = 0
+	else:
+		vel_x = -speed if want_left else speed
 
 func _mood_mult() -> Dictionary:
 	match mood:

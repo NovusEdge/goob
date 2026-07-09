@@ -15,19 +15,19 @@ aliases = {
 }
 actions = [{
 "anim": "sleeping",
-"loops": 2,
+"loops": 3,
 "name": "nap",
-"weight": 6
+"weight": 9
 }, {
 "anim": "scratch",
 "loops": 3,
 "name": "groom",
-"weight": 6
+"weight": 7
 }]
-idle_weight = 8
-wander_weight = 25
-follow_weight = 10
-jump_weight = 5
+idle_weight = 10
+wander_weight = 18
+follow_weight = 8
+jump_weight = 0
 follow_cursor = true
 gravity = true
 wander_speed = 1
