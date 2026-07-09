@@ -27,3 +27,7 @@ test:
 # your .env first (`set -a; source .env; set +a`) so the provider key is present.
 daemon:
     uv run python -m daemon.server
+
+# run the control-panel TUI (launches/monitors the pet + daemon)
+tui:
+    cd tui && go run .
