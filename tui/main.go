@@ -103,9 +103,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		leftW, rightW := layout(msg.Width - 4)
 		m.logs.Width = rightW                 // right column inner width
 		m.logs.Height = max(3, msg.Height-14) // fills under banner + daemon panel + footer
-		// Cuteness chart fills the sidebar space below control+cpu (~15 rows of
-		// chrome above it), aligning the sidebar bottom with the log pane.
-		m.cute = newCute(leftW-2, max(3, msg.Height-20))
+		// Cuteness chart fills the sidebar space below control+cpu, leaving room
+		// for the pet-debug panel beneath it.
+		m.cute = newCute(leftW-2, max(3, msg.Height-27))
 	case tickMsg:
 		// sampleCPU walks /proc synchronously on the Update goroutine each tick;
 		// acceptable because the pet/daemon process trees are tiny.
@@ -136,6 +136,7 @@ var (
 	cText   = lipgloss.Color("252")
 	cLabel  = lipgloss.Color("245")
 	cDim    = lipgloss.Color("240")
+	cPurple = lipgloss.Color("141")
 
 	appStyle    = lipgloss.NewStyle().Margin(1, 2, 0, 2) // top breathing room + side margins
 	bannerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("231")).Background(cAccent).Padding(0, 2)
@@ -186,6 +187,22 @@ func clampF(v, lo, hi float64) float64 {
 	return v
 }
 
+// debugRows parses a tagged pet-debug line into styled label/value rows.
+// line: "goob-dbg: state=idle anim=sleeping mood=alert pos=840,512"
+func debugRows(line string) string {
+	fields := map[string]string{}
+	for _, tok := range strings.Fields(strings.TrimPrefix(line, "goob-dbg:")) {
+		if k, v, ok := strings.Cut(tok, "="); ok {
+			fields[k] = v
+		}
+	}
+	var rows []string
+	for _, k := range []string{"state", "anim", "mood", "pos"} {
+		rows = append(rows, labelStyle.Width(6).Render(k)+valStyle.Render(fields[k]))
+	}
+	return strings.Join(rows, "\n")
+}
+
 // layout splits the usable width w into a fixed-ish left sidebar and a flexible
 // right column. Two panels each render at contentWidth+2 (border), plus a 1-col
 // gap between columns → leftW + rightW + 5 == w. Both View and the resize
@@ -228,8 +245,15 @@ func (m model) View() string {
 	cuteTitle := titleStyle.Render("cuteness ") +
 		cuteStyle.Render("♡ ") + valStyle.Render(fmt.Sprintf("%.0f%%", m.cuteVal))
 	cutePanel := panel(leftW, cAccent).Render(cuteTitle + "\n" + m.cute.View())
+
+	dbgBody := downStyle.Render("run pet with DEBUG=true")
+	if line := m.pet.debugLine(); line != "" {
+		dbgBody = debugRows(line)
+	}
+	dbgPanel := panel(leftW, cPurple).Render(titleStyle.Render("pet debug") + "\n" + dbgBody)
+
 	left := lipgloss.NewStyle().MarginRight(1).Render(
-		lipgloss.JoinVertical(lipgloss.Left, control, cpu, cutePanel))
+		lipgloss.JoinVertical(lipgloss.Left, control, cpu, cutePanel, dbgPanel))
 
 	// Right column: daemon stats above the logs.
 	var infoBody string

@@ -44,6 +44,8 @@ var grab_off := Vector2i.ZERO
 var mood_timer := 0
 var debug_layer: CanvasLayer = null
 var debug_label: Label = null
+var _last_dbg_key := ""      # dedupe the tagged stdout debug line (for the TUI)
+var _last_dbg_frame := 0
 
 const BUBBLE_TICKS := 240   # ~4s at 60fps
 var bubble_layer: CanvasLayer = null
@@ -277,6 +279,15 @@ func _physics_process(_dt: float) -> void:
 		var moods := ["neutral", "alert", "tired"]
 		debug_label.text = "state: %s\nanim:  %s\nmood:  %s\npos:   %d,%d" % [
 			s, _resolve(pet.anim), moods[pet.mood], pet.x, pet.y]
+		# Mirror the readout to stdout (tagged) so the TUI can show a copy. Print
+		# on state/anim/mood change, plus a 0.5s refresh for position — never per
+		# frame (that would flood while the pet moves).
+		var key := "%s|%s|%s" % [s, _resolve(pet.anim), moods[pet.mood]]
+		if key != _last_dbg_key or frame - _last_dbg_frame >= 30:
+			_last_dbg_key = key
+			_last_dbg_frame = frame
+			print("goob-dbg: state=%s anim=%s mood=%s pos=%d,%d" % [
+				s, _resolve(pet.anim), moods[pet.mood], pet.x, pet.y])
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:

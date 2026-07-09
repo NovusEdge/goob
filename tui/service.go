@@ -63,6 +63,7 @@ type Service struct {
 	dir    string
 	logs   *ring
 	cpu    float64
+	dbg    string // latest "goob-dbg:" line the process emitted (pet debug readout)
 
 	mu    sync.Mutex
 	cmd   *exec.Cmd
@@ -91,6 +92,12 @@ func (s *Service) pid() int {
 }
 
 func (s *Service) logText() string { return s.logs.text() }
+
+func (s *Service) debugLine() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.dbg
+}
 
 func (s *Service) start() error {
 	s.mu.Lock()
@@ -131,7 +138,13 @@ func (s *Service) start() error {
 		sc := bufio.NewScanner(pr)
 		sc.Buffer(make([]byte, 64*1024), 1<<20)
 		for sc.Scan() {
-			s.logs.add(sc.Text())
+			line := sc.Text()
+			s.logs.add(line)
+			if strings.HasPrefix(line, "goob-dbg:") {
+				s.mu.Lock()
+				s.dbg = line
+				s.mu.Unlock()
+			}
 		}
 		pr.Close()
 	}()
