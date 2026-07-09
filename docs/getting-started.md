@@ -47,36 +47,12 @@ everywhere except the pet itself, so your desktop stays fully usable.
 
 ## LLM commentary (optional)
 
-goob comments on what your machine is doing. Out of the box it uses a built-in
-list of canned lines — no setup, no network. For live, in-character remarks,
-run the optional Python daemon (needs [uv](https://docs.astral.sh/uv/)):
-
-1. `cp .env.example .env`, then edit `.env` — pick a provider block and fill in
-   your model + key (Vertex AI, Google AI Studio, OpenAI, or local Ollama).
-2. `just daemon` — it auto-loads `.env` and uses `uv` (reading `pyproject.toml`)
-   to fetch litellm, so there's no manual install and no `pip`.
-
-While the daemon runs, goob's comments are generated live and it can nudge its
-own behaviour. Stop the daemon and goob silently falls back to canned lines.
-
-### Configuring the pet
-
-Everything tweakable lives in `config/`:
-
-| File | What it is | Edit it? |
-|------|-----------|----------|
-| `config/PERSONALITY.md` | The pet's **voice/character** — fed to the LLM as its personality. | Yes — make it yours. |
-| `config/PROMPT.md` | The **engine contract** (tools, the `emit` output format, constraints). | Rarely — only if you change how the daemon works. |
-| `config/comments.json` | The **canned lines** shown when no daemon is running, keyed by mood (`neutral`/`alert`/`tired`). | Yes — add your own. |
-
-The LLM's system prompt is `PROMPT.md` + `PERSONALITY.md` composed together, so
-you can rewrite the personality without touching the mechanics. Both fall back
-to a built-in default if the file is missing.
-
-**Fully local / private:** litellm speaks to Ollama too — install Ollama, then
-`export GOOB_MODEL=ollama/llama3` (or any pulled model). Nothing leaves your
-machine. Only the daemon ever reads system state, and only an allowlisted
-digest (watched processes, battery, thermal) — never your full process list.
+goob comments on what your machine is doing. Out of the box it uses a
+built-in list of canned lines — no setup, no network. Run the optional Python
+daemon and comments are generated live instead, with the pet able to nudge
+its own behaviour; stop the daemon and it silently falls back to canned
+lines. See [LLM Commentary](llm-commentary.md) for setup, providers, and how
+it decides when to speak.
 
 ## Make it your creature
 
