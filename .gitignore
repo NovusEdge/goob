@@ -17,3 +17,6 @@ __pycache__/
 
 # uv virtualenv
 .venv/
+
+# TUI build artifact (go run leaves it; `just tui` rebuilds)
+tui/tui

@@ -14,13 +14,17 @@ just run        # or: godot --path .
 ```
 
 - **Left-drag** to pick it up
-- **Right-click** to startle it
-- **Jiggle your cursor** near it to summon a playful chase
+- **Right-click** to pet it
+
+It also wanders, chases your cursor on its own, and — with the optional
+[LLM daemon](llm-commentary.md) running — comments on what your machine is
+doing via speech bubbles.
 
 ## Docs
 
 - [Getting Started](getting-started.md) - run it, customize sprites
 - [Behavior Model](behavior-model.md) - how the engine thinks, bring your own creature
 - [Configuration](configuration.md) - runtime settings
+- [LLM Commentary](llm-commentary.md) - the optional ambient-comment daemon
 - [Reference](reference.md) - technical details for extending
 - [Roadmap](roadmap.md) - what's planned

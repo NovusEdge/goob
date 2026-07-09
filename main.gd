@@ -57,7 +57,7 @@ const HEARTBEAT_TICKS := 5400          # ~90s — pipe up on its own even with n
 var commenter: Commenter = null
 var frame := 0
 var last_comment_frame := -100000
-var last_heartbeat_frame := 0
+var last_heartbeat_frame := 300 - HEARTBEAT_TICKS   # first heartbeat ~5s after launch
 
 const DAEMON_URL := "http://127.0.0.1:8787/tick"
 var http: HTTPRequest = null
