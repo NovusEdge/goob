@@ -45,13 +45,24 @@ func _ready() -> void:
 	scaled_w = frame_w * SCALE
 	scaled_h = frame_h * SCALE
 
-	sprite = $Sprite
+	sprite = _find_sprite()
+	if sprite == null:
+		push_error("main.gd: no AnimatedSprite2D child found")
+		return
 	sprite.sprite_frames = _build_frames(load(SPRITE_PATH), manifest)
 	sprite.scale = Vector2(SCALE, SCALE)
 
-	var scr := DisplayServer.screen_get_size()
+	# Bound the cat to the usable area (excludes panels/taskbars) so it doesn't
+	# walk under a taskbar that's rendered on a compositor layer above us.
+	var usable := DisplayServer.screen_get_usable_rect()
 	pet = PetBrain.new()
-	pet.setup(scr.x, scr.y, scaled_w, scaled_h, _loop_lengths(manifest))
+	pet.setup(usable.end.x, usable.end.y, scaled_w, scaled_h, _loop_lengths(manifest))
+
+func _find_sprite() -> AnimatedSprite2D:
+	for c in get_children():
+		if c is AnimatedSprite2D:
+			return c
+	return null
 
 func _setup_window() -> void:
 	get_viewport().transparent_bg = true
@@ -242,7 +253,9 @@ func _glob(dir: String, prefix: String) -> Array:
 	return out
 
 func _read_text(path: String) -> String:
+	# /proc and /sys report bogus file lengths, so get_as_text() asserts and
+	# spams. These are all single-value files — read one line instead.
 	var f := FileAccess.open(path, FileAccess.READ)
 	if f == null:
 		return ""
-	return f.get_as_text()
+	return f.get_line()
