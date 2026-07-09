@@ -1,6 +1,6 @@
 [gd_resource type="Resource" script_class="PetConfig" format=3 uid="uid://f24ibtge70uc"]
 
-[ext_resource type="Script" uid="uid://cxqsdcxnuykok" path="res://pet_config.gd" id="1_cfg"]
+[ext_resource type="Script" uid="uid://cxqsdcxnuykok" path="res://scripts/pet_config.gd" id="1_cfg"]
 
 [resource]
 script = ExtResource("1_cfg")

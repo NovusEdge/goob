@@ -1,6 +1,6 @@
-[gd_resource type="Resource" script_class="PetConfig" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="PetConfig" format=3]
 
-[ext_resource type="Script" path="res://pet_config.gd" id="1_cfg"]
+[ext_resource type="Script" uid="uid://cxqsdcxnuykok" path="res://scripts/pet_config.gd" id="1_cfg"]
 
 [resource]
 script = ExtResource("1_cfg")
@@ -16,36 +16,34 @@ aliases = {
 }
 actions = [{
 "anim": "sleeping",
-"loops": 10,
+"loops": 12,
 "name": "nap",
-"weight": 9
+"weight": 14
 }, {
 "anim": "scratch",
 "loops": 3,
 "name": "groom",
-"weight": 7
+"weight": 6
 }]
-idle_weight = 10
-wander_weight = 18
-follow_weight = 8
+idle_weight = 14
+wander_weight = 8
+follow_weight = 4
 jump_weight = 0
+idle_delay = 180
+zoomies_weight = 0
+retreat_interval_sec = 900.0
+jiggle_reaction = "startle"
+follow_reach = "dash"
 follow_cursor = true
 gravity = true
 wander_speed = 1
-follow_speed = 5
+follow_speed = 4
 alert_weights = {
-"follow": 2.0,
-"groom": 0.5,
-"jump": 1.2,
-"nap": 0.0,
-"wander": 1.5
+"follow": 1.3,
+"wander": 1.2
 }
 tired_weights = {
 "follow": 0.0,
-"groom": 1.5,
-"jump": 0.0,
 "nap": 3.0,
 "wander": 0.3
 }
-alert_reaction = ""
-tired_reaction = ""

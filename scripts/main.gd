@@ -5,7 +5,7 @@ extends Node2D
 # on for GTK, but here it's trivial). Mouse passthrough is clipped to the cat's
 # rect so the rest of the desktop stays click-through.
 
-const DEFAULT_CONFIG := "res://playful_cat.tres"
+const DEFAULT_CONFIG := "res://creatures/playful_cat.tres"
 
 # Per-creature data. Set it in the Inspector to swap creatures; falls back to the
 # bundled cat if unset. See docs/behavior-model.md and pet_config.gd.
@@ -202,10 +202,21 @@ func _debug_enabled() -> bool:
 func _setup_window() -> void:
 	get_viewport().transparent_bg = true
 	var w := get_window()
+	w.mode = Window.MODE_WINDOWED   # never fullscreen — it kills transparency/passthrough
 	w.transparent = true
 	w.borderless = true
 	w.always_on_top = true
+	_apply_screen_size()
+	# Re-apply after one frame: when launched detached (e.g. from the TUI) the
+	# DisplayServer isn't always ready at _ready() time, so the first size/position
+	# silently doesn't stick and the window opens tiny in the top-left corner.
+	get_tree().process_frame.connect(_apply_screen_size, CONNECT_ONE_SHOT)
+
+func _apply_screen_size() -> void:
 	var scr := DisplayServer.screen_get_size()
+	if scr.x <= 0 or scr.y <= 0:
+		return                       # display not ready — leave it for the next attempt
+	var w := get_window()
 	w.size = scr
 	w.position = Vector2i.ZERO
 
@@ -281,7 +292,7 @@ func _physics_process(_dt: float) -> void:
 		s = "clip:" + pet.clip_anim
 	var moods := ["neutral", "alert", "tired"]
 	var anim_name := _resolve(pet.anim)
-	var mood_name := moods[pet.mood]
+	var mood_name: String = moods[pet.mood]
 	if debug_layer.visible:
 		debug_label.text = "state: %s\nanim:  %s\nmood:  %s\npos:   %d,%d" % [
 			s, anim_name, mood_name, pet.x, pet.y]

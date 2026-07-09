@@ -1,7 +1,8 @@
 [gd_scene format=3 uid="uid://b1uufgy26wdbs"]
 
 [ext_resource type="Texture2D" uid="uid://b1xk4qocvrr6t" path="res://assets/cat-grey.png" id="1_ig7tw"]
-[ext_resource type="Script" uid="uid://m8lffrbqwadq" path="res://main.gd" id="2_main"]
+[ext_resource type="Script" uid="uid://m8lffrbqwadq" path="res://scripts/main.gd" id="2_main"]
+[ext_resource type="Texture2D" uid="uid://b0ceu2rtqi6y0" path="res://assets/faces/anime/anime girl portrait pixelart all facial expressions.png" id="3_h2yge"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_074og"]
 atlas = ExtResource("1_ig7tw")
@@ -772,6 +773,40 @@ corner_radius_top_right = 6
 corner_radius_bottom_right = 6
 corner_radius_bottom_left = 6
 
+[sub_resource type="AtlasTexture" id="AtlasTexture_inymm"]
+atlas = ExtResource("3_h2yge")
+region = Rect2(0, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_jcxqu"]
+atlas = ExtResource("3_h2yge")
+region = Rect2(128, 32, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_0arob"]
+atlas = ExtResource("3_h2yge")
+region = Rect2(0, 32, 32, 32)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_kpq6v"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_inymm")
+}],
+"loop": 1,
+"name": &"default",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_jcxqu")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_0arob")
+}],
+"loop": 1,
+"name": &"talking",
+"speed": 5.0
+}]
+
 [node name="Main" type="Node2D" unique_id=1071384221]
 script = ExtResource("2_main")
 
@@ -798,3 +833,9 @@ theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_font_sizes/font_size = 15
 theme_override_styles/normal = SubResource("StyleBoxFlat_dbg")
 text = "state:"
+
+[node name="DialogSprite" type="AnimatedSprite2D" parent="." unique_id=2066719838]
+position = Vector2(1133, 27)
+sprite_frames = SubResource("SpriteFrames_kpq6v")
+animation = &"talking"
+autoplay = "default"

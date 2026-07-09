@@ -99,6 +99,12 @@ Sprite packs included:
 - **Simple cat** by [Elthen](https://elthen.itch.io/2d-pixel-art-cat-sprites)
 - **Emote speech bubbles (32p)** by [Pooklea](https://pooklea.itch.io/emote-speech-bubble-32p)
 
+Face-window portraits & UI:
+- **Quirky Expressive Portraits** by [eLZach](https://elzach.itch.io/quirky-expressive-portraits) (CC-BY-4.0)
+- **Cute Character Asset Pack** by [Applesauce](https://applesauce-shwee.itch.io/applesauces-cute-character-asset-pack)
+- **Anime Girl Face Pixelart** by [Hedi Dev Studio](https://hedi-dev-studio.itch.io/anime-girl-face-pixelart)
+- **Complete UI Essential Pack** by [Crusenho](https://crusenho.itch.io/complete-ui-essential-pack) — speech-bubble frames
+
 Go support these artists!
 
 ---
