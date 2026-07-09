@@ -359,12 +359,14 @@ func _on_tick_completed(result: int, code: int, _headers: PackedStringArray,
 		var data = JSON.parse_string(body.get_string_from_utf8())
 		if typeof(data) == TYPE_DICTIONARY:
 			var st := String(data.get("state", ""))
-			if st != "":
-				pet.drive_state(st)
+			var applied := st != "" and pet.drive_state(st)
 			var say := String(data.get("say", ""))
 			if say.strip_edges() != "" and say != last_say:
 				last_say = say
 				_show_bubble(say)
+			elif st != "" and not applied:
+				# LLM asked for an action that was rejected and said nothing -> canned
+				_fallback_comment(pending_mood)
 			return
 	_fallback_comment(pending_mood)      # any failure -> canned, never silence
 
