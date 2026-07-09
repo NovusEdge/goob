@@ -21,9 +21,13 @@ func pick(mood_key: String) -> String:
 	if typeof(arr) != TYPE_ARRAY or arr.is_empty():
 		return ""
 	var choice := String(arr[randi() % arr.size()])
-	# no immediate repeat: if we rolled the last line, step to the next one
-	if choice == _last and arr.size() > 1:
-		var i: int = arr.find(_last)
-		choice = String(arr[(i + 1) % arr.size()])
+	# no immediate repeat: if we rolled the last line, pick from the others
+	if choice == _last:
+		var others: Array = []
+		for v in arr:
+			if String(v) != _last:
+				others.append(String(v))
+		if not others.is_empty():
+			choice = String(others[randi() % others.size()])
 	_last = choice
 	return choice
