@@ -123,16 +123,23 @@ func _debug_enabled() -> bool:
 	return false
 
 func _make_debug_label() -> void:
+	var panel := PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0, 0, 0, 0.6)
+	sb.set_corner_radius_all(6)
+	sb.set_content_margin_all(8)
+	panel.add_theme_stylebox_override("panel", sb)
+	var scr := DisplayServer.screen_get_size()
+	panel.position = Vector2(scr.x - 250, 8)
+	panel.custom_minimum_size = Vector2(230, 0)
+
 	debug_label = Label.new()
+	debug_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	debug_label.add_theme_font_size_override("font_size", 15)
 	debug_label.add_theme_color_override("font_color", Color.WHITE)
-	debug_label.add_theme_color_override("font_outline_color", Color.BLACK)
-	debug_label.add_theme_constant_override("outline_size", 4)
-	debug_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	var scr := DisplayServer.screen_get_size()
-	debug_label.position = Vector2(scr.x - 260, 8)
-	debug_label.custom_minimum_size = Vector2(250, 0)
-	add_child(debug_label)
+	panel.add_child(debug_label)
+	add_child(panel)
 
 func _setup_window() -> void:
 	get_viewport().transparent_bg = true
