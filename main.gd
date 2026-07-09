@@ -149,8 +149,9 @@ func _make_bubble() -> void:
 	bubble_label = Label.new()
 	bubble_label.add_theme_color_override("font_color", Color.WHITE)
 	bubble_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	bubble_label.custom_minimum_size = Vector2(0, 0)
-	bubble_label.size = Vector2(220, 0)
+	# Give the label (and thus the PanelContainer) a real width to wrap within —
+	# without this the container collapses to ~1 char and text stacks vertically.
+	bubble_label.custom_minimum_size = Vector2(240, 0)
 	bubble_panel.add_child(bubble_label)
 	bubble_layer.visible = false
 	# ponytail: PanelContainer bubble; swap in the Pooklea nine-patch art later
