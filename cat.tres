@@ -15,7 +15,7 @@ aliases = {
 }
 actions = [{
 "anim": "sleeping",
-"loops": 3,
+"loops": 10,
 "name": "nap",
 "weight": 9
 }, {
