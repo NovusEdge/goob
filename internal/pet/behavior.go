@@ -59,19 +59,21 @@ func (p *Pet) Update(cursorX, cursorY int) {
 		}
 
 	case "chase":
-		p.anim = "walk2"
+		p.anim = "run"
 		if cursorX >= 0 && cursorY >= 0 {
 			dx := cursorX - p.X - p.frameW/2
-			if abs(dx) < 20 {
+			if abs(dx) < 30 {
+				// close enough - pounce!
+				p.state = "pounce"
+				p.timer = 0
 				p.velX = 0
 			} else if dx > 0 {
-				p.velX = 4
+				p.velX = 5
 				p.FacingLeft = false
 			} else {
-				p.velX = -4
+				p.velX = -5
 				p.FacingLeft = true
 			}
-			// chase timer - give up after a while
 			p.timer++
 			if p.timer > 300 {
 				p.state = "idle"
@@ -79,6 +81,15 @@ func (p *Pet) Update(cursorX, cursorY int) {
 			}
 		} else {
 			p.state = "idle"
+		}
+
+	case "pounce":
+		p.anim = "pounce"
+		p.velX = 0
+		p.timer++
+		if p.timer > 30 {
+			p.state = "idle"
+			p.timer = 0
 		}
 
 	case "clean":

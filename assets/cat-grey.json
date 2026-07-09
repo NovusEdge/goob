@@ -14,6 +14,8 @@
     "sleep":     { "row": 47, "frames": 8, "fps": 2 },
     "walk":      { "row": 6, "frames": 8, "fps": 8 },
     "walk2":     { "row": 6, "frames": 8, "fps": 8 },
+    "run":       { "row": 41, "frames": 2, "fps": 10 },
+    "pounce":    { "row": 42, "frames": 4, "fps": 8 },
     "clean":     { "row": 17, "frames": 5, "fps": 4 },
     "clean2":    { "row": 17, "frames": 5, "fps": 4 },
     "stretch":   { "row": 12, "frames": 4, "fps": 3 },
