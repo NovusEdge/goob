@@ -5,33 +5,22 @@ extends Node2D
 # on for GTK, but here it's trivial). Mouse passthrough is clipped to the cat's
 # rect so the rest of the desktop stays click-through.
 
-const SCALE := 5
+const DEFAULT_CONFIG := "res://cat.tres"
 
-# Animations are authored in the Godot SpriteFrames editor (the AnimatedSprite2D
-# child of Main). The state machine speaks canonical names; ALIAS bridges those
-# onto the authored animation names, and FALLBACK degrades anything still
-# unmatched toward idle. Only "idle" has to exist. Add an alias when you author a
-# new animation under a friendlier name (e.g. run -> running).
-const ALIAS := {
-	"idle2": "idle", "walk": "walking", "walk2": "walking",
-	"run": "running", "chase": "running", "pounce": "sprint",
-	"spawn": "appear", "sleep": "sleeping",
-	"clean": "scratch", "clean2": "scratch", "paw": "scratch",
-}
+# Per-creature data. Set it in the Inspector to swap creatures; falls back to the
+# bundled cat if unset. See docs/behavior-model.md and pet_config.gd.
+@export var config: PetConfig
+
+# Engine behaviours the state machine can emit. The config's `aliases` map these
+# onto authored animations; FALLBACK degrades anything unmatched toward idle
+# (the one animation every creature must have).
+const ENGINE_STATES := ["appear", "idle", "wander", "follow", "dash", "jump",
+	"grab", "carry", "drop", "startle"]
 const FALLBACK := {
-	"idle2": "idle", "walk": "idle", "walk2": "walk", "run": "walk",
-	"pounce": "paw", "paw": "idle", "sit": "idle", "sit2": "sit",
-	"loaf": "sit", "sleep": "loaf", "clean": "idle", "clean2": "clean",
-	"stretch": "idle", "yawn": "idle", "meow": "idle", "roll": "idle",
-	"jump": "idle", "scared": "idle", "spawn": "idle", "pickup": "idle",
-	"putdown": "idle", "held": "sit", "held2": "held",
+	"idle2": "idle", "wander": "idle", "follow": "wander", "dash": "follow",
+	"appear": "idle", "jump": "idle", "grab": "idle", "carry": "idle",
+	"drop": "idle", "startle": "idle",
 }
-
-# Every canonical animation the state machine can emit — used to precompute hold
-# durations from the authored frame counts.
-const CANON := ["spawn", "idle", "idle2", "walk", "walk2", "run", "pounce",
-	"sit", "sit2", "loaf", "sleep", "clean", "clean2", "stretch", "yawn",
-	"meow", "roll", "jump", "scared", "pickup", "putdown", "held", "held2", "paw"]
 
 var pet: PetBrain
 var sprite: AnimatedSprite2D
@@ -51,30 +40,43 @@ var mood_timer := 0
 func _ready() -> void:
 	_setup_window()
 
-	sprite = _find_sprite()
-	if sprite == null or sprite.sprite_frames == null:
-		push_error("main.gd: need an AnimatedSprite2D child with authored SpriteFrames")
+	if config == null:
+		config = load(DEFAULT_CONFIG)
+	if config == null:
+		push_error("main.gd: no PetConfig (set one in the Inspector or provide %s)" % DEFAULT_CONFIG)
 		return
-	sprite.scale = Vector2(SCALE, SCALE)
+
+	sprite = _find_sprite()
+	if sprite == null:
+		push_error("main.gd: no AnimatedSprite2D child found")
+		return
+	if config.sprite_frames != null:
+		sprite.sprite_frames = config.sprite_frames
+	if sprite.sprite_frames == null:
+		push_error("main.gd: no SpriteFrames (author on the node or set config.sprite_frames)")
+		return
+	sprite.scale = Vector2(config.scale, config.scale)
 
 	# frame size from the first authored frame (all frames are the same size)
 	var tex := sprite.sprite_frames.get_frame_texture(_resolve("idle"), 0)
 	if tex != null:
 		frame_w = tex.get_width()
 		frame_h = tex.get_height()
-	scaled_w = frame_w * SCALE
-	scaled_h = frame_h * SCALE
+	scaled_w = frame_w * config.scale
+	scaled_h = frame_h * config.scale
 
-	# hold-state durations derive from the authored frame counts + fps
+	# loop lengths for every authored animation + every engine behaviour
 	var lens := {}
-	for c in CANON:
-		lens[c] = _anim_ticks(_resolve(c))
+	for a in sprite.sprite_frames.get_animation_names():
+		lens[a] = _anim_ticks(a)
+	for s in ENGINE_STATES:
+		lens[s] = _anim_ticks(_resolve(s))
 
-	# Bound the cat to the usable area (excludes panels/taskbars) so it doesn't
+	# Bound the pet to the usable area (excludes panels/taskbars) so it doesn't
 	# walk under a taskbar that's rendered on a compositor layer above us.
 	var usable := DisplayServer.screen_get_usable_rect()
 	pet = PetBrain.new()
-	pet.setup(usable.end.x, usable.end.y, scaled_w, scaled_h, lens)
+	pet.setup(usable.end.x, usable.end.y, scaled_w, scaled_h, config, lens)
 
 func _find_sprite() -> AnimatedSprite2D:
 	for c in get_children():
@@ -172,8 +174,8 @@ func _resolve(state_name: String) -> String:
 	for _i in FALLBACK.size() + 2:
 		if sf.has_animation(n):
 			return n
-		if ALIAS.has(n) and sf.has_animation(ALIAS[n]):
-			return ALIAS[n]
+		if config.aliases.has(n) and sf.has_animation(config.aliases[n]):
+			return config.aliases[n]
 		if FALLBACK.has(n):
 			n = FALLBACK[n]
 		else:

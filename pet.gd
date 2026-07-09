@@ -1,142 +1,133 @@
 class_name PetBrain
 extends RefCounted
 
-# Direct port of internal/pet/behavior.go. Timers count physics ticks (60/s),
-# matching the Go frame counts. See main.gd for how it's driven.
+# The behaviour engine. Universal companion verbs live here; the creature's
+# animations, expressive actions, weights and personality come from a PetConfig.
+# See docs/behavior-model.md. Timers count physics ticks (60/s).
+#
+# States:
+#   appear/dash/drop/startle/grab/<action> -> the generic "timed" state
+#   idle    - the hub; loiters then picks a next behaviour
+#   wander  - roams to a random spot (bored)
+#   follow  - seeks the cursor (wants attention); bursts into dash on arrival
+#   jump/airborne - a hop under gravity
+#   carry   - being held under the cursor
+
+var cfg: PetConfig
+var loop_lens: Dictionary  # animation name -> ticks for one full loop
 
 var x := 0
 var y := 0
 var vel_x := 0
 var vel_y := 0
 var facing_left := false
-var state := "spawn"
-var anim := "spawn"
-var target_x := 0
+var state := "idle"
+var anim := "idle"
 var timer := 0
+var target_x := 0
 var screen_w := 0
 var screen_h := 0
 var frame_w := 0
 var frame_h := 0
-var variant := 0
-var mood := 0            # 0 neutral, 1 alert, 2 tired
-var loop_lens := {}      # anim -> ticks for one full loop
+var mood := 0  # 0 neutral, 1 alert, 2 tired
 
+# generic timed state: play `t_anim` for `t_left` ticks, then become `t_next`
+var t_anim := "idle"
+var t_left := 0
+var t_next := "idle"
+
+# cursor-jiggle detection
 var prev_cursor_x := 0
 var cursor_dir := 0
 var cursor_seen := false
 var jiggle := 0
 
-# Transient states that play an animation for `loops` cycles then return to idle.
-const HOLD_STATES := {
-	"spawn":   {"anim": "spawn",   "anim2": "",       "loops": 1},
-	"pounce":  {"anim": "pounce",  "anim2": "",       "loops": 1},
-	"scared":  {"anim": "scared",  "anim2": "",       "loops": 2},
-	"paw":     {"anim": "paw",     "anim2": "",       "loops": 3},
-	"stretch": {"anim": "stretch", "anim2": "",       "loops": 1},
-	"yawn":    {"anim": "yawn",    "anim2": "",       "loops": 1},
-	"meow":    {"anim": "meow",    "anim2": "",       "loops": 2},
-	"roll":    {"anim": "roll",    "anim2": "",       "loops": 1},
-	"clean":   {"anim": "clean",   "anim2": "clean2", "loops": 3},
-	"sit":     {"anim": "sit",     "anim2": "sit2",   "loops": 3},
-	"loaf":    {"anim": "loaf",    "anim2": "",       "loops": 2},
-	"sleep":   {"anim": "sleep",   "anim2": "",       "loops": 2},
-	"putdown": {"anim": "putdown", "anim2": "",       "loops": 1},
-}
-
-func setup(sw: int, sh: int, fw: int, fh: int, lens: Dictionary) -> void:
+func setup(sw: int, sh: int, fw: int, fh: int, config: PetConfig, lens: Dictionary) -> void:
 	screen_w = sw
 	screen_h = sh
 	frame_w = fw
 	frame_h = fh
+	cfg = config
 	loop_lens = lens
 	x = sw / 2
 	y = sh - fh
-	state = "spawn"
-	anim = "spawn"
+	_timed("appear", _ticks("appear"), "idle")
 
-func loop_len(a: String) -> int:
-	var n: int = loop_lens.get(a, 0)
+func _ticks(name: String) -> int:
+	var n: int = loop_lens.get(name, 0)
 	return n if n > 0 else 60
+
+func _timed(a: String, ticks: int, nxt: String = "idle") -> void:
+	state = "timed"
+	t_anim = a
+	t_left = maxi(1, ticks)
+	t_next = nxt
 
 func update(cursor_x: int, cursor_y: int) -> void:
 	var ground := screen_h - frame_h
 	_detect_jiggle(cursor_x)
 
-	if HOLD_STATES.has(state):
-		var h: Dictionary = HOLD_STATES[state]
-		anim = h.anim
-		if h.anim2 != "" and variant == 1:
-			anim = h.anim2
-		vel_x = 0
-		timer += 1
-		if timer >= h.loops * loop_len(h.anim):
-			timer = 0
-			state = "idle"
-	else:
-		match state:
-			"idle":
-				anim = "idle2" if variant == 1 else "idle"
+	match state:
+		"timed":
+			anim = t_anim
+			vel_x = 0
+			t_left -= 1
+			if t_left <= 0:
+				state = t_next
+				timer = 0
+		"idle":
+			anim = "idle"
+			vel_x = 0
+			timer += 1
+			if timer > _idle_delay():
+				timer = 0
+				_decide()
+		"wander":
+			anim = "wander"
+			var dx := target_x - x
+			if abs(dx) < 4:
+				state = "idle"
 				vel_x = 0
-				timer += 1
-				if timer > _idle_delay():
-					timer = 0
-					_decide_next_action()
-			"walk":
-				anim = "walk"
-				var dx := target_x - x
-				if abs(dx) < 4:
-					state = "idle"
-					vel_x = 0
-					timer = 0
+				timer = 0
+			elif dx > 0:
+				vel_x = cfg.wander_speed
+				facing_left = false
+			else:
+				vel_x = -cfg.wander_speed
+				facing_left = true
+		"follow":
+			anim = "follow"
+			if cfg.follow_cursor and cursor_x >= 0 and cursor_y >= 0:
+				var dx := cursor_x - x - frame_w / 2
+				if abs(dx) < 30:
+					_timed("dash", _ticks("dash"), "idle")
 				elif dx > 0:
-					vel_x = 1
+					vel_x = cfg.follow_speed
 					facing_left = false
 				else:
-					vel_x = -1
+					vel_x = -cfg.follow_speed
 					facing_left = true
-			"chase":
-				anim = "run"
-				if cursor_x >= 0 and cursor_y >= 0:
-					var dx := cursor_x - x - frame_w / 2
-					if abs(dx) < 30:
-						state = "pounce"
-						timer = 0
-						vel_x = 0
-					elif dx > 0:
-						vel_x = 5
-						facing_left = false
-					else:
-						vel_x = -5
-						facing_left = true
-					timer += 1
-					if timer > 300:
-						state = "idle"
-						timer = 0
-				else:
-					state = "idle"
-			"jump":
-				anim = "jump"
-				vel_y = -8
-				state = "airborne"
-			"airborne":
-				anim = "jump"
-			"pickup":
-				anim = "pickup"
-				vel_x = 0
-				vel_y = 0
 				timer += 1
-				if timer > 36:
-					state = "held"
+				if timer > 300:
+					state = "idle"
 					timer = 0
-			"held":
-				anim = "held2" if variant == 1 else "held"
-				vel_x = 0
-				vel_y = 0
+			else:
+				state = "idle"
+		"jump":
+			anim = "jump"
+			vel_y = -8
+			state = "airborne"
+		"airborne":
+			anim = "jump"
+		"carry":
+			anim = "carry"
+			vel_x = 0
+			vel_y = 0
 
 	x += vel_x
 
-	# gravity — a carried cat hangs from the cursor, it doesn't fall
-	if not held():
+	# gravity — a carried pet hangs from the cursor; a floaty creature never falls
+	if cfg.gravity and not held():
 		if y < ground:
 			vel_y += 1
 			if vel_y > 10:
@@ -157,47 +148,95 @@ func _idle_delay() -> int:
 		2: return 150
 		_: return 90
 
-func _decide_next_action() -> void:
-	variant = randi() % 2
-	if not grounded():
+# _decide builds the weighted candidate set (core behaviours + config actions),
+# applies the current mood's multipliers, and rolls one.
+func _decide() -> void:
+	var names: Array = []
+	var weights: Array = []
+	var actions_by_name := {}
+
+	names.append("idle")
+	weights.append(float(cfg.idle_weight))
+	names.append("wander")
+	weights.append(float(cfg.wander_weight))
+	if cfg.follow_cursor:
+		names.append("follow")
+		weights.append(float(cfg.follow_weight))
+	if cfg.gravity:
+		names.append("jump")
+		weights.append(float(cfg.jump_weight))
+	for a in cfg.actions:
+		var nm := String(a.get("name", "action"))
+		names.append(nm)
+		weights.append(float(a.get("weight", 1)))
+		actions_by_name[nm] = a
+
+	var mm := _mood_mult()
+	var total := 0.0
+	for i in names.size():
+		weights[i] *= float(mm.get(names[i], 1.0))
+		if weights[i] < 0.0:
+			weights[i] = 0.0
+		total += weights[i]
+
+	if total <= 0.0:
+		state = "idle"
 		return
 
-	var actions := ["walk", "walk", "chase", "sit", "clean", "sleep", "paw",
-		"jump", "stretch", "yawn", "loaf", "meow", "roll", "idle"]
-	var weights := [25, 15, 10, 8, 6, 5, 5, 5, 4, 4, 4, 3, 3, 8]
+	var roll := randf() * total
+	var acc := 0.0
+	for i in names.size():
+		acc += weights[i]
+		if roll < acc:
+			_pick(names[i], actions_by_name.get(names[i], null))
+			return
+	state = "idle"
+
+func _pick(nm: String, action) -> void:
+	if action != null:
+		var a_anim := String(action.get("anim", "idle"))
+		var loops := int(action.get("loops", 1))
+		_timed(a_anim, loops * _ticks(a_anim), "idle")
+	elif nm == "wander":
+		target_x = randi() % maxi(1, screen_w - frame_w)
+		state = "wander"
+	elif nm == "follow":
+		state = "follow"
+		timer = 0
+	elif nm == "jump":
+		state = "jump"
+		timer = 0
+	else:
+		state = "idle"
+
+func _mood_mult() -> Dictionary:
 	match mood:
-		1: weights = [35, 20, 18, 6, 2, 0, 8, 6, 2, 1, 0, 6, 2, 4]
-		2: weights = [8, 5, 0, 12, 6, 22, 2, 0, 4, 10, 15, 2, 2, 12]
-
-	var total := 0
-	for w in weights:
-		total += w
-	var roll := randi() % total
-	var s := 0
-	for i in weights.size():
-		s += weights[i]
-		if roll < s:
-			state = actions[i]
-			break
-
-	if state == "walk":
-		target_x = randi() % (screen_w - frame_w)
+		1: return cfg.alert_weights
+		2: return cfg.tired_weights
+		_: return {}
 
 func set_mood(m: int) -> void:
 	if m == mood:
 		return
 	mood = m
-	if not grounded() or not _interruptible():
+	if held() or not _interruptible():
 		return
+	var r := ""
 	if m == 2:
-		state = "yawn"
-		timer = 0
+		r = cfg.tired_reaction
 	elif m == 1:
-		state = "meow"
-		timer = 0
+		r = cfg.alert_reaction
+	if r != "":
+		_timed(r, _ticks(r), "idle")
 
 func _interruptible() -> bool:
-	return not (state in ["held", "pickup", "putdown", "scared", "chase", "pounce"])
+	if held():
+		return false
+	if state == "follow":
+		return false
+	if state == "timed" and t_anim == "startle":
+		return false
+	return true
 
 func _detect_jiggle(cx: int) -> void:
 	if cx < 0:
@@ -219,8 +258,8 @@ func _detect_jiggle(cx: int) -> void:
 	if cursor_dir != 0 and dir != cursor_dir:
 		jiggle += 3
 	cursor_dir = dir
-	if jiggle >= 12 and grounded() and _interruptible():
-		state = "chase"
+	if jiggle >= 12 and cfg.follow_cursor and grounded() and _interruptible():
+		state = "follow"
 		timer = 0
 		jiggle = 0
 
@@ -239,30 +278,31 @@ func _clamp() -> void:
 		vel_y = 0
 
 func grounded() -> bool:
+	if not cfg.gravity:
+		return true
 	return y >= screen_h - frame_h
 
 func held() -> bool:
-	return state == "held" or state == "pickup"
+	return state == "carry" or (state == "timed" and t_next == "carry")
 
 func scare() -> void:
-	if not (state in ["scared", "held", "pickup", "putdown"]):
-		state = "scared"
-		timer = 0
+	if held():
+		return
+	if state == "timed" and t_anim == "startle":
+		return
+	_timed("startle", _ticks("startle"), "idle")
 
 func do_jump() -> void:
-	if grounded():
+	if cfg.gravity and grounded():
 		state = "jump"
 		timer = 0
 
 func hold(px: int, py: int) -> void:
-	if state != "held" and state != "pickup":
-		state = "pickup"
-		timer = 0
-		variant = randi() % 2
+	if not held():
+		_timed("grab", _ticks("grab"), "carry")
 	x = px - frame_w / 2
 	y = py - frame_h / 2
 
 func release() -> void:
-	if state == "held" or state == "pickup":
-		state = "putdown"
-		timer = 0
+	if held():
+		_timed("drop", _ticks("drop"), "idle")

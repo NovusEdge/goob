@@ -194,10 +194,10 @@ No scripting required.
 
 ## Status
 
-- **Implemented:** the engine core behaviors + moods + jiggle + drag, animations
-  driven from an authored `SpriteFrames`, alias + fallback resolution. Currently
-  the alias/weights live in `main.gd` / `pet.gd` (cat defaults).
-- **Planned:** extract the per-creature data into a `PetConfig` resource and
-  rename the in-code states to the neutral verbs above, shipping a `cat.tres`
-  that reproduces today's behavior. Then the whole table above becomes editable
-  data.
+- **Implemented.** The engine core behaviors use the neutral verbs above
+  (`pet.gd`), animations come from an authored `SpriteFrames`, and all
+  per-creature data — aliases, actions, weights, moods, toggles, speeds — lives
+  in a `PetConfig` resource (`pet_config.gd`). The bundled `cat.tres` reproduces
+  the cat. Swap the config (Inspector field on `Main`, or replace `cat.tres`) to
+  swap creatures.
+- **Next:** a config UI over these knobs; then the LLM/chat-bubble layer.

@@ -603,8 +603,8 @@ animations = [{
 script = ExtResource("2_main")
 
 [node name="pet" type="AnimatedSprite2D" parent="." unique_id=2040810278]
-position = Vector2(16, 16)
+position = Vector2(22, 21)
 sprite_frames = SubResource("SpriteFrames_kapl2")
 animation = &"idle"
 autoplay = "idle"
-frame_progress = 0.6490653
+frame_progress = 0.65600973
