@@ -93,32 +93,43 @@ func (s *Service) pid() int {
 func (s *Service) logText() string { return s.logs.text() }
 
 func (s *Service) start() error {
-	if s.running() {
+	s.mu.Lock()
+	if s.alive {
+		s.mu.Unlock()
 		return nil
 	}
+	s.alive = true
+	s.mu.Unlock()
+
 	cmd := exec.Command("just", s.target)
 	cmd.Dir = s.dir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	pr, pw, err := os.Pipe()
 	if err != nil {
+		s.mu.Lock()
+		s.alive = false
+		s.mu.Unlock()
 		return err
 	}
 	cmd.Stdout, cmd.Stderr = pw, pw
 	if err := cmd.Start(); err != nil {
 		pr.Close()
 		pw.Close()
+		s.mu.Lock()
+		s.alive = false
+		s.mu.Unlock()
 		return err
 	}
 	pw.Close() // parent's copy; the child holds its own fds
 
 	s.mu.Lock()
 	s.cmd = cmd
-	s.alive = true
 	s.procs = map[int32]*process.Process{}
 	s.mu.Unlock()
 
 	go func() {
 		sc := bufio.NewScanner(pr)
+		sc.Buffer(make([]byte, 64*1024), 1<<20)
 		for sc.Scan() {
 			s.logs.add(sc.Text())
 		}
@@ -146,7 +157,7 @@ func (s *Service) stop() {
 	go func() {
 		time.Sleep(3 * time.Second)
 		s.mu.Lock()
-		still := s.alive
+		still := s.alive && s.cmd == cmd
 		s.mu.Unlock()
 		if still {
 			syscall.Kill(-pgid, syscall.SIGKILL)
@@ -165,13 +176,12 @@ func (s *Service) sampleCPU() float64 {
 		s.mu.Unlock()
 		return 0
 	}
-	s.mu.Lock()
-	cache := s.procs
-	s.mu.Unlock()
-
 	pids := treePIDs(int32(root))
 	sum := 0.0
 	seen := map[int32]bool{}
+
+	s.mu.Lock()
+	cache := s.procs
 	for _, pid := range pids {
 		seen[pid] = true
 		p := cache[pid]
@@ -192,7 +202,6 @@ func (s *Service) sampleCPU() float64 {
 			delete(cache, pid)
 		}
 	}
-	s.mu.Lock()
 	s.cpu = sum
 	s.mu.Unlock()
 	return sum
