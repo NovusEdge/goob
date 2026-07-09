@@ -52,6 +52,19 @@ to the actions above):
 | `wander_weight` | int | 25 |
 | `follow_weight` | int | 10 |
 | `jump_weight` | int | 5 |
+| `idle_delay` | int | 90 | Ticks the pet loiters before picking again (longer = lazier). Mood-scaled: alert ×0.5, tired ×1.7. |
+
+### Personality behaviors
+
+| Field | Type | Default | Meaning |
+|-------|------|---------|---------|
+| `zoomies_weight` | int | 0 | Picker weight for a ~10s dart-fest (`0` = off). |
+| `zoomies_cooldown_sec` | float | 20 | Minimum seconds between zoomies. |
+| `zoomies_duration_sec` | float | 10 | How long a burst lasts. |
+| `zoomies_speed_mult` | float | 2.5 | Dart speed as a multiple of `follow_speed`. |
+| `retreat_interval_sec` | float | 0 | Every N seconds, amble to a corner and nap (`0` = off). Needs a `sleep` alias. |
+| `jiggle_reaction` | String | `"follow"` | Which behavior a cursor-jiggle triggers: `"follow"`, `"startle"`, or `"none"`. |
+| `follow_reach` | String | `"dash"` | On reaching the cursor: `"dash"` (one burst) or `"play"` (bat at it — needs a `play` alias, else falls back to `dash`). |
 
 ### Toggles & movement
 
@@ -79,6 +92,29 @@ behavior/action name (missing = `1.0`, `0` disables):
 alert_weights = { "wander": 1.5, "follow": 2.0, "nap": 0.0 }
 tired_weights = { "follow": 0.0, "jump": 0.0, "nap": 3.0, "wander": 0.3 }
 ```
+
+## Personalities
+
+A **personality is just a config.** The repo ships three:
+
+- `cat.tres` — balanced default.
+- `lazy_cat.tres` — rests a lot, roams little, retreats to corners to nap, and
+  `startle`s when you jiggle the cursor at it.
+- `playful_cat.tres` — wanders/follows more, does zoomies, and (once you author a
+  `play` animation) bats at the cursor on reach.
+
+Load one by assigning it to the `config` field on the `Main` node in the Inspector.
+
+## Pickup animation
+
+The engine already drives `grab` → `carry` → `drop` when you drag the pet. They
+fall back to `idle` unless you author pickup art and map it:
+
+```
+aliases = { "grab": "pickup", "carry": "hold", "drop": "putdown" }
+```
+
+Then dragging plays your pickup/hold/putdown animations, no code.
 
 ## Making a new creature
 

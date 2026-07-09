@@ -6,19 +6,27 @@ extends RefCounted
 # See docs/behavior-model.md. Timers count physics ticks (60/s).
 #
 # States:
-#   appear/dash/drop/startle/grab/<action> -> the generic "timed" state
+#   appear/dash/drop/startle/grab/sleep/<action> -> the generic "timed" state
 #   idle    - the hub; loiters then picks a next behaviour
 #   wander  - roams to a random spot (bored)
-#   follow  - seeks the cursor (wants attention); bursts into dash on arrival
+#   follow  - seeks the cursor; on reach -> dash or play
+#   play    - bats at the cursor, staying engaged
+#   zoomies - a ~10s dart-fest
+#   retreat - ambles to a corner then naps
 #   jump/airborne - a hop under gravity
 #   carry   - being held under the cursor
 
 const TURN_PAUSE := 6      # ticks of hesitation before flipping direction
 const SETTLE_BIAS := 1.8   # after moving, likelier to rest next
 const ROUSE_BIAS := 1.3    # after resting, likelier to get moving next
+const RETREAT_NAP_LOOPS := 12  # a corner nap is a good long one
+const PLAY_LOOPS := 3      # bat-loops before the pet is satisfied
+const PLAY_LEASH := 60     # cursor drifts this far -> chase it again
+const REACH_DIST := 30     # "arrived at the cursor" threshold
 
 var cfg: PetConfig
 var loop_lens: Dictionary  # animation name -> ticks for one full loop
+var play_available := false # does a real "play" animation resolve?
 
 var x := 0
 var y := 0
@@ -47,31 +55,44 @@ var cursor_seen := false
 var jiggle := 0
 
 var turn_pause := 0
-var last_active := false  # was the last chosen behaviour a mover (wander/follow/jump)?
+var last_active := false  # was the last chosen behaviour a mover?
 
-func setup(sw: int, sh: int, fw: int, fh: int, config: PetConfig, lens: Dictionary) -> void:
+var ticks := 0                    # global tick counter for timers
+var retreat_at := -1              # tick to retreat at (-1 = off)
+var last_zoomies_tick := -1000000 # for the zoomies cooldown
+var zoomies_end := 0
+var dart_target := 0
+var play_loops_left := 0
+
+func setup(sw: int, sh: int, fw: int, fh: int, config: PetConfig, lens: Dictionary, has_play := false) -> void:
 	screen_w = sw
 	screen_h = sh
 	frame_w = fw
 	frame_h = fh
 	cfg = config
 	loop_lens = lens
+	play_available = has_play
 	x = sw / 2
 	y = sh - fh
+	retreat_at = _sec_ticks(cfg.retreat_interval_sec) if cfg.retreat_interval_sec > 0.0 else -1
 	_timed("appear", _ticks("appear"), "idle")
 
 func _ticks(name: String) -> int:
 	var n: int = loop_lens.get(name, 0)
 	return n if n > 0 else 60
 
-func _timed(a: String, ticks: int, nxt: String = "idle") -> void:
+func _sec_ticks(s: float) -> int:
+	return int(s * 60.0)
+
+func _timed(a: String, t: int, nxt: String = "idle") -> void:
 	state = "timed"
 	t_anim = a
-	t_left = maxi(1, ticks)
+	t_left = maxi(1, t)
 	t_next = nxt
 
 func update(cursor_x: int, cursor_y: int) -> void:
 	var ground := screen_h - frame_h
+	ticks += 1
 	_detect_jiggle(cursor_x)
 
 	match state:
@@ -86,7 +107,9 @@ func update(cursor_x: int, cursor_y: int) -> void:
 			anim = "idle"
 			vel_x = 0
 			timer += 1
-			if timer > _idle_delay():
+			if _retreat_due():
+				_start_retreat()
+			elif timer > _idle_delay():
 				timer = 0
 				_decide()
 		"wander":
@@ -100,12 +123,26 @@ func update(cursor_x: int, cursor_y: int) -> void:
 				_move(false, cfg.wander_speed)
 			else:
 				_move(true, cfg.wander_speed)
+		"retreat":
+			anim = "wander"
+			var dx := target_x - x
+			if abs(dx) < 4:
+				_timed("sleep", RETREAT_NAP_LOOPS * _ticks("sleep"), "idle")
+			elif dx > 0:
+				_move(false, cfg.wander_speed)
+			else:
+				_move(true, cfg.wander_speed)
 		"follow":
 			anim = "follow"
 			if cfg.follow_cursor and cursor_x >= 0 and cursor_y >= 0:
 				var dx := cursor_x - x - frame_w / 2
-				if abs(dx) < 30:
-					_timed("dash", _ticks("dash"), "idle")
+				if abs(dx) < REACH_DIST:
+					if cfg.follow_reach == "play" and play_available:
+						state = "play"
+						play_loops_left = PLAY_LOOPS
+						timer = 0
+					else:
+						_timed("dash", _ticks("dash"), "idle")
 				elif dx > 0:
 					_move(false, cfg.follow_speed)
 				else:
@@ -116,6 +153,42 @@ func update(cursor_x: int, cursor_y: int) -> void:
 					timer = 0
 			else:
 				state = "idle"
+		"play":
+			anim = "play"
+			vel_x = 0
+			if cursor_x < 0:
+				state = "idle"
+				timer = 0
+			else:
+				var pdx := cursor_x - x - frame_w / 2
+				facing_left = pdx < 0
+				if abs(pdx) > PLAY_LEASH:
+					state = "follow"
+					timer = 0
+				else:
+					timer += 1
+					if timer >= _ticks("play"):
+						timer = 0
+						play_loops_left -= 1
+						if play_loops_left <= 0:
+							state = "idle"
+		"zoomies":
+			anim = "dash"
+			if ticks >= zoomies_end:
+				state = "idle"
+				timer = 0
+			else:
+				var sp := roundi(cfg.follow_speed * cfg.zoomies_speed_mult)
+				var dx := dart_target - x
+				if abs(dx) < 8:
+					dart_target = _new_dart()
+					dx = dart_target - x
+				if dx > 0:
+					vel_x = sp
+					facing_left = false
+				else:
+					vel_x = -sp
+					facing_left = true
 		"jump":
 			anim = "jump"
 			vel_y = -8
@@ -146,10 +219,31 @@ func update(cursor_x: int, cursor_y: int) -> void:
 	_clamp()
 
 func _idle_delay() -> int:
+	var base := cfg.idle_delay
 	match mood:
-		1: return 45
-		2: return 150
-		_: return 90
+		1: return int(base * 0.5)
+		2: return int(base * 1.7)
+		_: return base
+
+func _retreat_due() -> bool:
+	return retreat_at >= 0 and ticks >= retreat_at
+
+func _start_retreat() -> void:
+	retreat_at = ticks + _sec_ticks(cfg.retreat_interval_sec)
+	# nearest bottom corner
+	target_x = 0 if x < (screen_w - frame_w) / 2 else screen_w - frame_w
+	state = "retreat"
+
+func _start_zoomies() -> void:
+	last_zoomies_tick = ticks
+	zoomies_end = ticks + _sec_ticks(cfg.zoomies_duration_sec)
+	dart_target = _new_dart()
+	state = "zoomies"
+
+func _new_dart() -> int:
+	var dist := 150 + randi() % 350
+	var t := x + dist if randi() % 2 == 0 else x - dist
+	return clampi(t, 0, screen_w - frame_w)
 
 # _decide builds the weighted candidate set (core behaviours + config actions),
 # applies the current mood's multipliers, and rolls one.
@@ -168,6 +262,9 @@ func _decide() -> void:
 	if cfg.gravity:
 		names.append("jump")
 		weights.append(float(cfg.jump_weight))
+	if cfg.zoomies_weight > 0 and ticks - last_zoomies_tick >= _sec_ticks(cfg.zoomies_cooldown_sec):
+		names.append("zoomies")
+		weights.append(float(cfg.zoomies_weight))
 	for a in cfg.actions:
 		var nm := String(a.get("name", "action"))
 		names.append(nm)
@@ -197,7 +294,7 @@ func _decide() -> void:
 	state = "idle"
 
 func _pick(nm: String, action) -> void:
-	last_active = nm in ["wander", "follow", "jump"]
+	last_active = nm in ["wander", "follow", "jump", "zoomies"]
 	if action != null:
 		var a_anim := String(action.get("anim", "idle"))
 		var loops := int(action.get("loops", 1))
@@ -211,6 +308,8 @@ func _pick(nm: String, action) -> void:
 	elif nm == "jump":
 		state = "jump"
 		timer = 0
+	elif nm == "zoomies":
+		_start_zoomies()
 	else:
 		state = "idle"
 
@@ -259,11 +358,17 @@ func set_mood(m: int) -> void:
 func _interruptible() -> bool:
 	if held():
 		return false
-	if state == "follow":
+	if state in ["follow", "play", "zoomies", "retreat"]:
 		return false
-	if state == "timed" and t_anim == "startle":
+	if state == "timed" and t_anim in ["startle", "dash"]:
 		return false
 	return true
+
+# _user_idle is the seam for "the user has been away for a while" (retreat
+# trigger B). Stubbed false — see github issue #2 (no cheap idle source on
+# Wayland yet). When wired, returning true should send the pet to retreat+sleep.
+func _user_idle() -> bool:
+	return false
 
 func _detect_jiggle(cx: int) -> void:
 	if cx < 0:
@@ -285,10 +390,23 @@ func _detect_jiggle(cx: int) -> void:
 	if cursor_dir != 0 and dir != cursor_dir:
 		jiggle += 3
 	cursor_dir = dir
-	if jiggle >= 12 and cfg.follow_cursor and grounded() and _interruptible():
-		state = "follow"
-		timer = 0
+	if jiggle >= 12 and grounded() and _interruptible():
+		_trigger(cfg.jiggle_reaction)
 		jiggle = 0
+
+# Route a config-named reaction (jiggle_reaction) to a behaviour.
+func _trigger(reaction: String) -> void:
+	match reaction:
+		"follow":
+			if cfg.follow_cursor:
+				state = "follow"
+				timer = 0
+		"startle":
+			scare()
+		"none", "":
+			pass
+		_:
+			pass
 
 func _clamp() -> void:
 	if x < 0:

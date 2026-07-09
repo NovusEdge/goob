@@ -33,6 +33,12 @@ verbs** — nothing cat-specific.
 | `carry`    | held under the cursor                          | `drop` on release|
 | `drop`     | put down                                       | `idle` (falls)   |
 | `startle`  | spooked by a right-click or cursor jiggle      | `idle`           |
+| `play`     | bats at the cursor, staying engaged (from `follow`) | `idle`/`follow` |
+| `zoomies`  | a ~10s dart-fest (weighted pick + cooldown)    | `idle`           |
+| `retreat`  | ambles to a corner and takes a long nap        | `idle`           |
+
+The last three are **personality behaviors** — off by default, switched on and
+weighted per creature via the config (see [Configuration](configuration.md)).
 
 `fall` (gravity) isn't a discrete state — it's a rule applied whenever the pet
 isn't grounded and isn't being carried.

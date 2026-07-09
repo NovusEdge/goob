@@ -15,11 +15,11 @@ const DEFAULT_CONFIG := "res://cat.tres"
 # onto authored animations; FALLBACK degrades anything unmatched toward idle
 # (the one animation every creature must have).
 const ENGINE_STATES := ["appear", "idle", "wander", "follow", "dash", "jump",
-	"grab", "carry", "drop", "startle"]
+	"grab", "carry", "drop", "startle", "sleep", "play"]
 const FALLBACK := {
 	"idle2": "idle", "wander": "idle", "follow": "wander", "dash": "follow",
 	"appear": "idle", "jump": "idle", "grab": "idle", "carry": "idle",
-	"drop": "idle", "startle": "idle",
+	"drop": "idle", "startle": "idle", "sleep": "idle", "play": "idle",
 }
 
 var pet: PetBrain
@@ -96,7 +96,7 @@ func _ready() -> void:
 	# walk under a taskbar that's rendered on a compositor layer above us.
 	var usable := DisplayServer.screen_get_usable_rect()
 	pet = PetBrain.new()
-	pet.setup(usable.end.x, usable.end.y, body_w, body_h, config, lens)
+	pet.setup(usable.end.x, usable.end.y, body_w, body_h, config, lens, _resolve("play") != "idle")
 
 func _find_sprite() -> AnimatedSprite2D:
 	for c in get_children():

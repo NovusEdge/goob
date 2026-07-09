@@ -16,36 +16,40 @@ aliases = {
 }
 actions = [{
 "anim": "sleeping",
-"loops": 10,
+"loops": 4,
 "name": "nap",
-"weight": 9
+"weight": 3
 }, {
 "anim": "scratch",
 "loops": 3,
 "name": "groom",
-"weight": 7
+"weight": 5
 }]
-idle_weight = 10
-wander_weight = 18
-follow_weight = 8
+idle_weight = 6
+wander_weight = 28
+follow_weight = 16
 jump_weight = 0
+idle_delay = 45
+zoomies_weight = 12
+zoomies_cooldown_sec = 20.0
+zoomies_duration_sec = 10.0
+zoomies_speed_mult = 2.5
+retreat_interval_sec = 0.0
+jiggle_reaction = "follow"
+follow_reach = "play"
 follow_cursor = true
 gravity = true
-wander_speed = 1
-follow_speed = 5
+wander_speed = 2
+follow_speed = 6
 alert_weights = {
 "follow": 2.0,
-"groom": 0.5,
-"jump": 1.2,
 "nap": 0.0,
-"wander": 1.5
+"wander": 1.5,
+"zoomies": 1.5
 }
 tired_weights = {
 "follow": 0.0,
-"groom": 1.5,
-"jump": 0.0,
-"nap": 3.0,
-"wander": 0.3
+"nap": 2.5,
+"wander": 0.4,
+"zoomies": 0.0
 }
-alert_reaction = ""
-tired_reaction = ""
