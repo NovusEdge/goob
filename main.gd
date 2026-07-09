@@ -45,6 +45,13 @@ var mood_timer := 0
 var debug_layer: CanvasLayer = null
 var debug_label: Label = null
 
+const BUBBLE_TICKS := 240   # ~4s at 60fps
+var bubble_layer: CanvasLayer = null
+var bubble_panel: PanelContainer = null
+var bubble_label: Label = null
+var bubble_left := 0
+var last_say := ""          # de-dup: never show the same line twice in a row
+
 func _ready() -> void:
 	_setup_window()
 
@@ -105,6 +112,34 @@ func _ready() -> void:
 	debug_layer = $Debug
 	debug_label = $Debug/State
 	debug_layer.visible = _debug_enabled()
+	_make_bubble()
+
+func _make_bubble() -> void:
+	bubble_layer = CanvasLayer.new()
+	add_child(bubble_layer)
+	bubble_panel = PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.1, 0.1, 0.12, 0.92)
+	sb.set_corner_radius_all(10)
+	sb.set_content_margin_all(8)
+	bubble_panel.add_theme_stylebox_override("panel", sb)
+	bubble_layer.add_child(bubble_panel)
+	bubble_label = Label.new()
+	bubble_label.add_theme_color_override("font_color", Color.WHITE)
+	bubble_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	bubble_label.custom_minimum_size = Vector2(0, 0)
+	bubble_label.size = Vector2(220, 0)
+	bubble_panel.add_child(bubble_label)
+	bubble_layer.visible = false
+	# ponytail: PanelContainer bubble; swap in the Pooklea nine-patch art later
+	# once we've confirmed it sizes to arbitrary text.
+
+func _show_bubble(text: String) -> void:
+	if text == "":
+		return
+	bubble_label.text = text
+	bubble_left = BUBBLE_TICKS
+	bubble_layer.visible = true
 
 func _find_sprite() -> AnimatedSprite2D:
 	for c in get_children():
@@ -181,6 +216,19 @@ func _physics_process(_dt: float) -> void:
 		sprite.play(a)
 
 	_update_passthrough()
+
+	if bubble_layer.visible:
+		bubble_left -= 1
+		if bubble_left <= 0:
+			bubble_layer.visible = false
+		else:
+			var sz := bubble_panel.size
+			var bx: float = pet.x + body_w / 2.0 - sz.x / 2.0
+			var by: float = pet.y - sz.y - 8.0
+			var scr := DisplayServer.screen_get_size()
+			bx = clampf(bx, 0.0, float(scr.x) - sz.x)
+			by = clampf(by, 0.0, float(scr.y) - sz.y)
+			bubble_panel.position = Vector2(bx, by)
 
 	if debug_layer.visible:
 		var s := pet.state
