@@ -5,7 +5,7 @@ extends Node2D
 # on for GTK, but here it's trivial). Mouse passthrough is clipped to the cat's
 # rect so the rest of the desktop stays click-through.
 
-const DEFAULT_CONFIG := "res://cat.tres"
+const DEFAULT_CONFIG := "res://playful_cat.tres"
 
 # Per-creature data. Set it in the Inspector to swap creatures; falls back to the
 # bundled cat if unset. See docs/behavior-model.md and pet_config.gd.
