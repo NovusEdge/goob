@@ -23,7 +23,7 @@ test:
     {{godot}} --headless --path . --script res://tests/test_commenter.gd
     {{godot}} --headless --path . --script res://tests/test_drive_state.gd
 
-# run the LLM daemon (opt-in). Needs `pip install -r requirements.txt` and a
-# provider key in the environment, e.g. OPENAI_API_KEY. GOOB_MODEL picks the model.
+# run the LLM daemon (opt-in). uv reads pyproject.toml for deps (litellm). Load
+# your .env first (`set -a; source .env; set +a`) so the provider key is present.
 daemon:
-    python3 -m daemon.server
+    uv run python -m daemon.server

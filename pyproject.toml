@@ -1,0 +1,12 @@
+[project]
+name = "goob"
+version = "0.1.0"
+description = "goob's optional LLM commentary daemon"
+requires-python = ">=3.10"
+dependencies = [
+    "litellm[google]",
+]
+
+[tool.uv]
+# goob isn't a Python package to build — uv just manages the daemon's deps.
+package = false

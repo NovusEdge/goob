@@ -8,7 +8,7 @@ extends RefCounted
 var _lines: Dictionary = {}
 var _last: String = ""
 
-func _init(path := "res://comments.json") -> void:
+func _init(path := "res://config/comments.json") -> void:
 	var f := FileAccess.open(path, FileAccess.READ)
 	if f == null:
 		return
