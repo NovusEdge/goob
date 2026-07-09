@@ -41,6 +41,7 @@ var grabbing := false
 var grab_off := Vector2i.ZERO
 
 var mood_timer := 0
+var debug_label: Label = null
 
 func _ready() -> void:
 	_setup_window()
@@ -98,11 +99,40 @@ func _ready() -> void:
 	pet = PetBrain.new()
 	pet.setup(usable.end.x, usable.end.y, body_w, body_h, config, lens, _resolve("play") != "idle")
 
+	if _debug_enabled():
+		_make_debug_label()
+
 func _find_sprite() -> AnimatedSprite2D:
 	for c in get_children():
 		if c is AnimatedSprite2D:
 			return c
 	return null
+
+# DEBUG=true (env var or a .env line) shows a live state readout, top-right.
+func _debug_enabled() -> bool:
+	if OS.get_environment("DEBUG").to_lower() in ["true", "1", "yes"]:
+		return true
+	var f := FileAccess.open("res://.env", FileAccess.READ)
+	if f == null:
+		return false
+	while not f.eof_reached():
+		var line := f.get_line().strip_edges()
+		var idx := line.find("=")
+		if idx > 0 and line.substr(0, idx).strip_edges() == "DEBUG":
+			return line.substr(idx + 1).strip_edges().to_lower() in ["true", "1", "yes"]
+	return false
+
+func _make_debug_label() -> void:
+	debug_label = Label.new()
+	debug_label.add_theme_font_size_override("font_size", 15)
+	debug_label.add_theme_color_override("font_color", Color.WHITE)
+	debug_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	debug_label.add_theme_constant_override("outline_size", 4)
+	debug_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	var scr := DisplayServer.screen_get_size()
+	debug_label.position = Vector2(scr.x - 260, 8)
+	debug_label.custom_minimum_size = Vector2(250, 0)
+	add_child(debug_label)
 
 func _setup_window() -> void:
 	get_viewport().transparent_bg = true
@@ -158,6 +188,14 @@ func _physics_process(_dt: float) -> void:
 		sprite.play(a)
 
 	_update_passthrough()
+
+	if debug_label != null:
+		var s := pet.state
+		if s == "timed":
+			s = "timed:" + pet.t_anim
+		var moods := ["neutral", "alert", "tired"]
+		debug_label.text = "state: %s\nanim:  %s\nmood:  %s\npos:   %d,%d" % [
+			s, _resolve(pet.anim), moods[pet.mood], pet.x, pet.y]
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
