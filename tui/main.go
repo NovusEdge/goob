@@ -32,9 +32,10 @@ type model struct {
 	cuteVal     float64
 	logs        viewport.Model
 
-	stats    Stats
-	statsErr error
-	w, h     int
+	stats      Stats
+	statsErr   error
+	w, h       int
+	sidebarPad int // blank rows under the sidebar so both column bottoms align
 }
 
 // newCute builds the cuteness stream chart at a given size (rebuilt on resize).
@@ -101,11 +102,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
 		leftW, rightW := layout(msg.Width - 4)
-		m.logs.Width = rightW                 // right column inner width
-		m.logs.Height = max(3, msg.Height-14) // fills under banner + daemon panel + footer
-		// Cuteness chart fills the sidebar space below control+cpu, leaving room
-		// for the pet-debug panel beneath it.
-		m.cute = newCute(leftW-2, max(3, msg.Height-27))
+		m.logs.Width = rightW
+		// Rendered panel heights (content + 2 border): control 5, cpu 9,
+		// pet-debug 7, daemon-stats 7; chrome = a panel's title + 2 borders.
+		// The cuteness chart is kept COMPACT (capped) so it never dominates; the
+		// log pane fills its column, and the sidebar is padded to the same height
+		// so both column bottoms line up at any terminal size.
+		const controlH, cpuH, dbgH, daemonH, chrome = 5, 9, 7, 7, 3
+		bodyH := max(14, msg.Height-4)
+		cuteChartH := clampI(bodyH-controlH-cpuH-dbgH-chrome, 3, 7)
+		m.cute = newCute(leftW-2, cuteChartH)
+		leftH := controlH + cpuH + (cuteChartH + chrome) + dbgH
+		colH := max(leftH, bodyH) // fill the terminal when it's taller than the sidebar
+		m.logs.Height = max(3, colH-daemonH-chrome)
+		m.sidebarPad = colH - leftH
 	case tickMsg:
 		// sampleCPU walks /proc synchronously on the Update goroutine each tick;
 		// acceptable because the pet/daemon process trees are tiny.
@@ -187,7 +197,17 @@ func clampF(v, lo, hi float64) float64 {
 	return v
 }
 
-// debugRows parses a tagged pet-debug line into styled label/value rows.
+func clampI(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
+// debugRows parses a tagged pet-debug line into color-coded label/value rows.
 // line: "goob-dbg: state=idle anim=sleeping mood=alert pos=840,512"
 func debugRows(line string) string {
 	fields := map[string]string{}
@@ -196,11 +216,35 @@ func debugRows(line string) string {
 			fields[k] = v
 		}
 	}
-	var rows []string
-	for _, k := range []string{"state", "anim", "mood", "pos"} {
-		rows = append(rows, labelStyle.Width(6).Render(k)+valStyle.Render(fields[k]))
+	row := func(k, styled string) string { return labelStyle.Width(6).Render(k) + styled }
+	return strings.Join([]string{
+		row("state", stateStyle(fields["state"]).Render(fields["state"])),
+		row("anim", lipgloss.NewStyle().Foreground(cCyan).Render(fields["anim"])),
+		row("mood", moodStyle(fields["mood"]).Render(fields["mood"])),
+		row("pos", downStyle.Render(fields["pos"])),
+	}, "\n")
+}
+
+func moodStyle(m string) lipgloss.Style {
+	switch m {
+	case "alert":
+		return lipgloss.NewStyle().Foreground(cYellow).Bold(true)
+	case "tired":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("39")) // blue
+	default: // neutral
+		return lipgloss.NewStyle().Foreground(cGreen)
 	}
-	return strings.Join(rows, "\n")
+}
+
+func stateStyle(s string) lipgloss.Style {
+	switch {
+	case strings.HasPrefix(s, "zoomies"), strings.HasPrefix(s, "jump"):
+		return lipgloss.NewStyle().Foreground(cAccent).Bold(true) // excited = pink
+	case strings.HasPrefix(s, "sleep"), s == "idle", strings.HasPrefix(s, "clip:sleep"):
+		return downStyle // resting = dim
+	default:
+		return lipgloss.NewStyle().Foreground(cCyan) // active
+	}
 }
 
 // layout splits the usable width w into a fixed-ish left sidebar and a flexible
@@ -252,8 +296,15 @@ func (m model) View() string {
 	}
 	dbgPanel := panel(leftW, cPurple).Render(titleStyle.Render("pet debug") + "\n" + dbgBody)
 
+	// Pin the debug panel to the sidebar bottom (gap above it) so its border
+	// lines up with the log panel's bottom, keeping cuteness compact.
+	parts := []string{control, cpu, cutePanel}
+	if m.sidebarPad > 0 {
+		parts = append(parts, strings.Repeat("\n", m.sidebarPad-1))
+	}
+	parts = append(parts, dbgPanel)
 	left := lipgloss.NewStyle().MarginRight(1).Render(
-		lipgloss.JoinVertical(lipgloss.Left, control, cpu, cutePanel, dbgPanel))
+		lipgloss.JoinVertical(lipgloss.Left, parts...))
 
 	// Right column: daemon stats above the logs.
 	var infoBody string

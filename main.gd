@@ -272,22 +272,25 @@ func _physics_process(_dt: float) -> void:
 			# freeze it where it appeared instead of following.
 			_position_bubble()
 
+	# Compute the readout every frame. The on-screen overlay is gated by DEBUG,
+	# but the tagged stdout line is ALWAYS emitted so the TUI can mirror state
+	# regardless of DEBUG. Throttled: on state/anim/mood change, plus a 0.5s
+	# refresh for position — never per frame (that would flood while moving).
+	var s := pet.state
+	if s == "clip":
+		s = "clip:" + pet.clip_anim
+	var moods := ["neutral", "alert", "tired"]
+	var anim_name := _resolve(pet.anim)
+	var mood_name := moods[pet.mood]
 	if debug_layer.visible:
-		var s := pet.state
-		if s == "clip":
-			s = "clip:" + pet.clip_anim
-		var moods := ["neutral", "alert", "tired"]
 		debug_label.text = "state: %s\nanim:  %s\nmood:  %s\npos:   %d,%d" % [
-			s, _resolve(pet.anim), moods[pet.mood], pet.x, pet.y]
-		# Mirror the readout to stdout (tagged) so the TUI can show a copy. Print
-		# on state/anim/mood change, plus a 0.5s refresh for position — never per
-		# frame (that would flood while the pet moves).
-		var key := "%s|%s|%s" % [s, _resolve(pet.anim), moods[pet.mood]]
-		if key != _last_dbg_key or frame - _last_dbg_frame >= 30:
-			_last_dbg_key = key
-			_last_dbg_frame = frame
-			print("goob-dbg: state=%s anim=%s mood=%s pos=%d,%d" % [
-				s, _resolve(pet.anim), moods[pet.mood], pet.x, pet.y])
+			s, anim_name, mood_name, pet.x, pet.y]
+	var key := "%s|%s|%s" % [s, anim_name, mood_name]
+	if key != _last_dbg_key or frame - _last_dbg_frame >= 30:
+		_last_dbg_key = key
+		_last_dbg_frame = frame
+		print("goob-dbg: state=%s anim=%s mood=%s pos=%d,%d" % [
+			s, anim_name, mood_name, pet.x, pet.y])
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
