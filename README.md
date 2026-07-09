@@ -49,7 +49,40 @@ go build ./cmd/goob
 
 ## Custom Sprites
 
-Drop any Unity-style spritesheet and create a manifest:
+Drop any Unity-style spritesheet and create a manifest. **Only `idle` is
+required** — every other state falls back along a chain until it lands on one
+your sheet defines, so a two-row sheet works and a full one shines.
+
+### State vocabulary
+
+The engine drives this fixed set. Declare the ones you have; the rest substitute
+via the arrow (ultimately → `idle`). `xN` variants are picked at random if present.
+
+| State | Falls back to | When it plays |
+|-------|---------------|---------------|
+| `idle` / `idle2` | — | loitering (required) |
+| `walk` / `walk2` | idle | wandering to a spot |
+| `run` | walk → idle | chasing the cursor |
+| `pounce` | paw → idle | reaching the cursor |
+| `chase` | (uses `run`) | — |
+| `sit` / `sit2` | idle | resting upright |
+| `loaf` | sit → idle | loafing |
+| `sleep` | loaf → sit → idle | dozing |
+| `clean` / `clean2` | idle | grooming |
+| `stretch` `yawn` `meow` `roll` `paw` | idle | fidgets |
+| `jump` | idle | hopping |
+| `scared` | idle | startled (right-click) |
+| `spawn` | idle | first appearance |
+| `pickup` `held` / `held2` `putdown` | sit / idle | drag & drop |
+
+### Reactive moods
+
+goob samples the machine every ~2s and shifts disposition: **alert** when a
+build/dev process is running (paces, watches, bats), **tired** when the CPU is
+hot or the battery is low (flops, dozes, yawns). Tweak the watched process names
+in `internal/sysmon`.
+
+### Manifest example
 
 ```json
 {

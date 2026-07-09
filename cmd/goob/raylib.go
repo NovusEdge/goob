@@ -7,6 +7,7 @@ import (
 
 	"github.com/NovusEdge/goob/internal/pet"
 	"github.com/NovusEdge/goob/internal/sprite"
+	"github.com/NovusEdge/goob/internal/sysmon"
 )
 
 func runRaylib(manifestPath string, scale int, newPet func(int, int, int, int) *pet.Pet) {
@@ -34,10 +35,18 @@ func runRaylib(manifestPath string, scale int, newPet func(int, int, int, int) *
 	frameW, frameH := sheet.FrameSize()
 	scaledW, scaledH := frameW*scale, frameH*scale
 	p := newPet(screenW, screenH, scaledW, scaledH)
+	p.SetLoopFn(sheet.LoopLen)
 
+	frame := 0
 	for !rl.WindowShouldClose() {
-		// get global cursor position
-		cursorX, cursorY := getGlobalCursor()
+		if frame%120 == 0 { // ~every 2s: sample the machine's mood
+			p.SetMood(moodFrom(sysmon.Read()))
+		}
+		frame++
+
+		// get global cursor position + button state
+		cursorX, cursorY, buttons := getGlobalCursor()
+		applyPointer(p, cursorX, cursorY, buttons, scaledW, scaledH)
 
 		p.Update(cursorX, cursorY)
 		sheet.Update(p.Anim())

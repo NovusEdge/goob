@@ -2,7 +2,7 @@
 
 package main
 
-func getGlobalCursor() (int, int) {
+func getGlobalCursor() (x, y, buttons int) {
 	// ponytail: windows/mac cursor tracking TBD
-	return -1, -1
+	return -1, -1, 0
 }
