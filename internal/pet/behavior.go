@@ -21,8 +21,8 @@ func New(screenW, screenH, frameW, frameH int) *Pet {
 	return &Pet{
 		X:       screenW / 2,
 		Y:       screenH - frameH,
-		state:   "idle",
-		anim:    "idle",
+		state:   "spawn",
+		anim:    "spawn",
 		screenW: screenW,
 		screenH: screenH,
 		frameW:  frameW,
@@ -180,10 +180,38 @@ func (p *Pet) Update(cursorX, cursorY int) {
 			p.state = "idle"
 		}
 
-	case "held":
-		p.anim = "held"
+	case "pickup":
+		p.anim = "pickup"
 		p.velX = 0
 		p.velY = 0
+		p.timer++
+		if p.timer > 36 { // 6 frames at 8fps
+			p.state = "held"
+			p.timer = 0
+		}
+
+	case "held":
+		p.anim = pick("held", "held2", p.variant)
+		p.velX = 0
+		p.velY = 0
+
+	case "putdown":
+		p.anim = "putdown"
+		p.velX = 0
+		p.timer++
+		if p.timer > 36 {
+			p.state = "idle"
+			p.timer = 0
+		}
+
+	case "spawn":
+		p.anim = "spawn"
+		p.velX = 0
+		p.timer++
+		if p.timer > 60 { // ~1 sec at 60fps
+			p.state = "idle"
+			p.timer = 0
+		}
 	}
 
 	// apply velocities
@@ -217,14 +245,14 @@ func (p *Pet) decideNextAction() {
 	}
 
 	actions := []string{
-		"walk", "walk", "walk", // triple weight for movement
+		"walk", "walk", "chase", // movement
 		"sit", "clean", "sleep", "paw", "jump",
 		"stretch", "yawn", "loaf", "meow", "roll", "idle",
 	}
 	weights := []int{
-		20, 15, 10, // 45% walk total
+		25, 15, 10, // 50% movement total
 		8, 6, 5, 5, 5,
-		4, 4, 5, 4, 4, 5,
+		4, 4, 4, 3, 3, 8,
 	}
 
 	roll := rand.Intn(100)
@@ -271,7 +299,7 @@ func (p *Pet) Width() int   { return p.frameW }
 func (p *Pet) Height() int  { return p.frameH }
 
 func (p *Pet) Scare() {
-	if p.state != "scared" {
+	if p.state != "scared" && p.state != "held" && p.state != "pickup" && p.state != "putdown" {
 		p.state = "scared"
 		p.timer = 0
 	}
@@ -285,14 +313,19 @@ func (p *Pet) Jump() {
 }
 
 func (p *Pet) Hold(x, y int) {
-	p.state = "held"
+	if p.state != "held" && p.state != "pickup" {
+		p.state = "pickup"
+		p.timer = 0
+		p.variant = rand.Intn(2)
+	}
 	p.X = x - p.frameW/2
 	p.Y = y - p.frameH/2
 }
 
 func (p *Pet) Release() {
-	if p.state == "held" {
-		p.state = "airborne"
+	if p.state == "held" || p.state == "pickup" {
+		p.state = "putdown"
+		p.timer = 0
 	}
 }
 
