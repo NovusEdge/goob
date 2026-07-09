@@ -177,8 +177,10 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def log_message(self, *args):
-        pass                               # quiet
+    def log_message(self, fmt, *args):
+        # Log every request (incl. the TUI's 1s /stats polls) so the control
+        # panel's log pane stays live. `fmt % args` is the stdlib request line.
+        print("goob:", fmt % args)
 
 
 def main():
