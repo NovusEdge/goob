@@ -3,10 +3,13 @@ package main
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/NimbleMarkets/ntcharts/canvas/runes"
+	"github.com/NimbleMarkets/ntcharts/linechart/streamlinechart"
 	"github.com/NimbleMarkets/ntcharts/sparkline"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -25,11 +28,23 @@ type model struct {
 
 	petSpark    sparkline.Model
 	daemonSpark sparkline.Model
+	cute        streamlinechart.Model // joke "cuteness" meter — random flux
+	cuteVal     float64
 	logs        viewport.Model
 
 	stats    Stats
 	statsErr error
 	w, h     int
+}
+
+// newCute builds the cuteness stream chart at a given size (rebuilt on resize).
+func newCute(w, h int) streamlinechart.Model {
+	c := streamlinechart.New(w, h,
+		streamlinechart.WithYRange(0, 100),
+		streamlinechart.WithStyles(runes.ArcLineStyle,
+			lipgloss.NewStyle().Foreground(cAccent)))
+	c.SetViewYRange(0, 100)
+	return c
 }
 
 func tickCmd() tea.Cmd {
@@ -49,8 +64,10 @@ func initialModel() model {
 	return model{
 		pet:         newService("pet", "run", root),
 		daemon:      newService("daemon", "daemon", root),
-		petSpark:    sparkline.New(24, 2),
-		daemonSpark: sparkline.New(24, 2),
+		petSpark:    sparkline.New(24, 2, sparkline.WithStyle(lipgloss.NewStyle().Foreground(cCyan))),
+		daemonSpark: sparkline.New(24, 2, sparkline.WithStyle(lipgloss.NewStyle().Foreground(cGreen))),
+		cute:        newCute(24, 4),
+		cuteVal:     72, // starts adorable
 		logs:        vp,
 		statsErr:    errors.New("connecting…"),
 	}
@@ -83,9 +100,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
-		_, rightW := layout(msg.Width - 4)
+		leftW, rightW := layout(msg.Width - 4)
 		m.logs.Width = rightW                 // right column inner width
 		m.logs.Height = max(3, msg.Height-14) // fills under banner + daemon panel + footer
+		// Cuteness chart fills the sidebar space below control+cpu (~15 rows of
+		// chrome above it), aligning the sidebar bottom with the log pane.
+		m.cute = newCute(leftW-2, max(3, msg.Height-20))
 	case tickMsg:
 		// sampleCPU walks /proc synchronously on the Update goroutine each tick;
 		// acceptable because the pet/daemon process trees are tiny.
@@ -93,6 +113,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.petSpark.Draw()
 		m.daemonSpark.Push(m.daemon.sampleCPU())
 		m.daemonSpark.Draw()
+		// Cuteness: a bounded random walk — flails but stays adorable.
+		m.cuteVal = clampF(m.cuteVal+(rand.Float64()-0.5)*20, 5, 100)
+		m.cute.Push(m.cuteVal)
+		m.cute.Draw()
 		m.logs.SetContent(m.daemon.logText())
 		m.logs.GotoBottom()
 		return m, tea.Batch(tickCmd(), fetchCmd())
@@ -122,6 +146,7 @@ var (
 	upStyle     = lipgloss.NewStyle().Foreground(cGreen).Bold(true)
 	downStyle   = lipgloss.NewStyle().Foreground(cDim)
 	spendStyle  = lipgloss.NewStyle().Foreground(cGreen).Bold(true)
+	cuteStyle   = lipgloss.NewStyle().Foreground(cAccent).Bold(true)
 	footStyle   = lipgloss.NewStyle().Foreground(cDim).MarginTop(1)
 )
 
@@ -149,6 +174,16 @@ func short(s string, n int) string {
 		return s[:n-1] + "…"
 	}
 	return s
+}
+
+func clampF(v, lo, hi float64) float64 {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 // layout splits the usable width w into a fixed-ish left sidebar and a flexible
@@ -190,8 +225,11 @@ func (m model) View() string {
 		row("daem", valStyle.Render(fmt.Sprintf("%5.1f%%", m.daemon.cpu))),
 		m.daemonSpark.View(),
 	}, "\n"))
+	cuteTitle := titleStyle.Render("cuteness ") +
+		cuteStyle.Render("♡ ") + valStyle.Render(fmt.Sprintf("%.0f%%", m.cuteVal))
+	cutePanel := panel(leftW, cAccent).Render(cuteTitle + "\n" + m.cute.View())
 	left := lipgloss.NewStyle().MarginRight(1).Render(
-		lipgloss.JoinVertical(lipgloss.Left, control, cpu))
+		lipgloss.JoinVertical(lipgloss.Left, control, cpu, cutePanel))
 
 	// Right column: daemon stats above the logs.
 	var infoBody string
