@@ -7,8 +7,10 @@ Bring your own spritesheets to turn it into any creature: cat, dog, robot, slime
 
 ## Quick start
 
+Requires **Godot 4** (see [Getting Started](getting-started.md) to install it).
+
 ```bash
-godot --path .
+just run        # or: godot --path .
 ```
 
 - **Left-drag** to pick it up

@@ -1,15 +1,42 @@
 # Getting Started
 
+## Prerequisites
+
+goob is a **Godot 4 project** — you need the Godot 4 engine to run it. That's the
+only requirement: Godot ships as a single self-contained binary, and the pet has
+no other dependencies.
+
+1. Get **Godot 4** (4.3 or newer; developed on 4.7) — the standard build, not the
+   .NET/C# one:
+   - Download from [godotengine.org/download](https://godotengine.org/download), **or**
+   - Arch: `pacman -S godot` · macOS: `brew install godot` · Windows: `winget install GodotEngine.GodotEngine`
+2. Make sure `godot` is on your `PATH` (or note the binary path — you can pass it
+   as `GODOT=/path/to/godot`).
+3. Clone this repo.
+
 ## Run
 
-Open the project in Godot 4 and press **F5**, or:
+From the repo root:
 
 ```bash
+just run          # if you have `just` installed
+# or
 godot --path .
 ```
 
-Spawns a fullscreen transparent always-on-top overlay. Click-through everywhere
-except the pet itself.
+Or open the folder in the Godot editor and press **F5**.
+
+It spawns a fullscreen, transparent, always-on-top overlay. It's click-through
+everywhere except the pet itself, so your desktop stays fully usable.
+
+> **Wayland note:** goob is developed on Wayland and relies on a transparent
+> overlay + mouse passthrough. If transparency or click-through misbehaves,
+> that's compositor-dependent — start there.
+
+> **Tip:** after adding a new `class_name` script, run `just check` once (a
+> headless import) before `just run`. Godot only registers new global classes on
+> a filesystem scan, so a fresh script can otherwise trip a "Could not find type"
+> parser error.
 
 ## Controls
 
@@ -17,27 +44,21 @@ except the pet itself.
 |-------|--------|
 | Left-drag | Pick up and move |
 | Right-click | Startle |
-| Jiggle cursor near pet | Summon a chase |
+| Jiggle cursor near pet | Summon it to follow you |
 
-## Custom sprites
+## Make it your creature
 
-Point `MANIFEST_PATH` / `SPRITE_PATH` in `main.gd` at your sheet + manifest.
-Only `idle` is required; everything else falls back gracefully.
+goob is **not hardcoded to a cat.** A creature is defined by two data pieces —
+no engine code:
 
-```json
-{
-  "sheet": "my-pet.png",
-  "frameSize": [32, 32],
-  "states": {
-    "idle":  { "row": 0, "frames": 4, "fps": 3 },
-    "walk":  { "row": 6, "frames": 8, "fps": 8 },
-    "sleep": { "row": 47, "frames": 4, "fps": 2 }
-  }
-}
-```
+1. A **SpriteFrames** — the animations, authored in the Godot editor (on the
+   `AnimatedSprite2D` under `Main`, or referenced from the config).
+2. A **PetConfig** resource (`.tres`) — maps those animations onto the engine's
+   behaviors and sets the creature's personality (actions, weights, speeds).
 
-See [Behavior Model](behavior-model.md) for the full config format and how to
-build a creature from scratch.
+The bundled cat is `cat.tres`. To build your own, see
+[Configuration](configuration.md) for every knob, and
+[Behavior Model](behavior-model.md) for how the engine thinks.
 
 ## Credits
 
