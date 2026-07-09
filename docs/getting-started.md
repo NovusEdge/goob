@@ -43,8 +43,7 @@ everywhere except the pet itself, so your desktop stays fully usable.
 | Input | Effect |
 |-------|--------|
 | Left-drag | Pick up and move |
-| Right-click | Startle |
-| Jiggle cursor near pet | Summon it to follow you |
+| Right-click | Pet it on the head |
 
 ## Make it your creature
 

@@ -16,8 +16,7 @@ It spawns a fullscreen, transparent, always-on-top overlay. The window is
 click-through everywhere except the cat itself, so your desktop stays usable.
 
 - **Left-drag** the cat to pick it up and move it.
-- **Right-click** to startle it.
-- **Jiggle your cursor** near it to summon a playful chase.
+- **Right-click** to pet it on the head.
 
 ## How it works
 

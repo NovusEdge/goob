@@ -15,11 +15,12 @@ const DEFAULT_CONFIG := "res://playful_cat.tres"
 # onto authored animations; FALLBACK degrades anything unmatched toward idle
 # (the one animation every creature must have).
 const ENGINE_STATES := ["appear", "idle", "wander", "follow", "dash", "jump",
-	"grab", "carry", "drop", "startle", "sleep", "play"]
+	"grab", "carry", "drop", "startle", "sleep", "play", "sad", "pet"]
 const FALLBACK := {
 	"idle2": "idle", "wander": "idle", "follow": "wander", "dash": "follow",
 	"appear": "idle", "jump": "idle", "grab": "idle", "carry": "idle",
 	"drop": "idle", "startle": "idle", "sleep": "idle", "play": "idle",
+	"sad": "idle", "pet": "idle",
 }
 
 var pet: PetBrain
@@ -161,7 +162,7 @@ func _physics_process(_dt: float) -> void:
 		pet.release()
 	elif mouse_btn == 2 and _over_cat(gpos):
 		grabbing = false
-		pet.scare()
+		pet.pet_touch()
 	else:
 		grabbing = false
 
@@ -183,8 +184,8 @@ func _physics_process(_dt: float) -> void:
 
 	if debug_layer.visible:
 		var s := pet.state
-		if s == "timed":
-			s = "timed:" + pet.t_anim
+		if s == "clip":
+			s = "clip:" + pet.clip_anim
 		var moods := ["neutral", "alert", "tired"]
 		debug_label.text = "state: %s\nanim:  %s\nmood:  %s\npos:   %d,%d" % [
 			s, _resolve(pet.anim), moods[pet.mood], pet.x, pet.y]

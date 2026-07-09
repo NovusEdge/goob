@@ -5,16 +5,19 @@ extends RefCounted
 # animations, expressive actions, weights and personality come from a PetConfig.
 # See docs/behavior-model.md. Timers count physics ticks (60/s).
 #
-# States:
-#   appear/dash/drop/startle/grab/sleep/<action> -> the generic "timed" state
-#   idle    - the hub; loiters then picks a next behaviour
-#   wander  - roams to a random spot (bored)
-#   follow  - seeks the cursor; on reach -> dash or play
-#   play    - bats at the cursor, staying engaged
-#   zoomies - a ~10s dart-fest
-#   retreat - ambles to a corner then naps
-#   jump/airborne - a hop under gravity
-#   carry   - being held under the cursor
+# Two tiers of state:
+#   BEHAVIORS decide things and run indefinitely:
+#     idle    - the hub; loiters then picks a next behaviour
+#     wander  - roams to a random spot (bored)
+#     follow  - seeks the cursor; on reach -> dash or play
+#     play    - bats at the cursor, staying engaged
+#     zoomies - a ~10s dart-fest
+#     retreat - ambles to a corner then naps
+#     jump/airborne - a hop under gravity
+#     carry   - being held under the cursor
+#   CLIPS are dumb one-shots: play one anim for N ticks, then auto-return. The
+#   generic "clip" state backs appear/dash/startle/grab/drop/sleep/<action>. A
+#   clip may set `clip_lock` so mood/jiggle can't interrupt it mid-play.
 
 const TURN_PAUSE := 6      # ticks of hesitation before flipping direction
 const SETTLE_BIAS := 1.8   # after moving, likelier to rest next
@@ -23,7 +26,6 @@ const RETREAT_NAP_LOOPS := 12  # a corner nap is a good long one
 const PLAY_LOOPS := 3      # bat-loops before the pet is satisfied
 const PLAY_LEASH := 60     # cursor drifts this far -> chase it again
 const REACH_DIST := 30     # "arrived at the cursor" threshold
-const JIGGLE_RANGE := 250   # only a jiggle THIS close to the pet summons it
 
 var cfg: PetConfig
 var loop_lens: Dictionary  # animation name -> ticks for one full loop
@@ -44,10 +46,12 @@ var frame_w := 0
 var frame_h := 0
 var mood := 0  # 0 neutral, 1 alert, 2 tired
 
-# generic timed state: play `t_anim` for `t_left` ticks, then become `t_next`
-var t_anim := "idle"
-var t_left := 0
-var t_next := "idle"
+# generic clip state: play `clip_anim` for `clip_left` ticks, then become
+# `clip_next`. `clip_lock` = mood/jiggle can't interrupt it mid-play.
+var clip_anim := "idle"
+var clip_left := 0
+var clip_next := "idle"
+var clip_lock := false
 
 # cursor-jiggle detection
 var prev_cursor_x := 0
@@ -76,7 +80,7 @@ func setup(sw: int, sh: int, fw: int, fh: int, config: PetConfig, lens: Dictiona
 	x = sw / 2
 	y = sh - fh
 	retreat_at = _sec_ticks(cfg.retreat_interval_sec) if cfg.retreat_interval_sec > 0.0 else -1
-	_timed("appear", _ticks("appear"), "idle")
+	_clip("appear", _ticks("appear"), "idle")
 
 func _ticks(name: String) -> int:
 	var n: int = loop_lens.get(name, 0)
@@ -85,24 +89,25 @@ func _ticks(name: String) -> int:
 func _sec_ticks(s: float) -> int:
 	return int(s * 60.0)
 
-func _timed(a: String, t: int, nxt: String = "idle") -> void:
-	state = "timed"
-	t_anim = a
-	t_left = maxi(1, t)
-	t_next = nxt
+func _clip(a: String, t: int, nxt: String = "idle", lock := false) -> void:
+	state = "clip"
+	clip_anim = a
+	clip_left = maxi(1, t)
+	clip_next = nxt
+	clip_lock = lock
 
 func update(cursor_x: int, cursor_y: int) -> void:
 	var ground := screen_h - frame_h
 	ticks += 1
-	_detect_jiggle(cursor_x)
+	# _detect_jiggle(cursor_x)  # ponytail: jiggle-to-summon disabled for now
 
 	match state:
-		"timed":
-			anim = t_anim
+		"clip":
+			anim = clip_anim
 			vel_x = 0
-			t_left -= 1
-			if t_left <= 0:
-				state = t_next
+			clip_left -= 1
+			if clip_left <= 0:
+				state = clip_next
 				timer = 0
 		"idle":
 			anim = "idle"
@@ -128,7 +133,7 @@ func update(cursor_x: int, cursor_y: int) -> void:
 			anim = "wander"
 			var dx := target_x - x
 			if abs(dx) < 4:
-				_timed("sleep", RETREAT_NAP_LOOPS * _ticks("sleep"), "idle")
+				_clip("sleep", RETREAT_NAP_LOOPS * _ticks("sleep"), "idle")
 			elif dx > 0:
 				_move(false, cfg.wander_speed)
 			else:
@@ -138,12 +143,16 @@ func update(cursor_x: int, cursor_y: int) -> void:
 			if cfg.follow_cursor and cursor_x >= 0 and cursor_y >= 0:
 				var dx := cursor_x - x - frame_w / 2
 				if abs(dx) < REACH_DIST:
-					if cfg.follow_reach == "play" and play_available:
+					# a ground pet can't reach a cursor held a body-height+ above
+					# its head — it stops underneath and sulks instead.
+					if cfg.gravity and cursor_y < y - frame_h:
+						_clip("sad", _ticks("sad"), "idle")
+					elif cfg.follow_reach == "play" and play_available:
 						state = "play"
 						play_loops_left = PLAY_LOOPS
 						timer = 0
 					else:
-						_timed("dash", _ticks("dash"), "idle")
+						_clip("dash", _ticks("dash"), "idle", true)
 				elif dx > 0:
 					_move(false, cfg.follow_speed)
 				else:
@@ -299,7 +308,7 @@ func _pick(nm: String, action) -> void:
 	if action != null:
 		var a_anim := String(action.get("anim", "idle"))
 		var loops := int(action.get("loops", 1))
-		_timed(a_anim, loops * _ticks(a_anim), "idle")
+		_clip(a_anim, loops * _ticks(a_anim), "idle")
 	elif nm == "wander":
 		target_x = randi() % maxi(1, screen_w - frame_w)
 		state = "wander"
@@ -354,14 +363,14 @@ func set_mood(m: int) -> void:
 	elif m == 1:
 		r = cfg.alert_reaction
 	if r != "":
-		_timed(r, _ticks(r), "idle")
+		_clip(r, _ticks(r), "idle")
 
 func _interruptible() -> bool:
 	if held():
 		return false
 	if state in ["follow", "play", "zoomies", "retreat"]:
 		return false
-	if state == "timed" and t_anim in ["startle", "dash"]:
+	if state == "clip" and clip_lock:
 		return false
 	return true
 
@@ -388,8 +397,7 @@ func _detect_jiggle(cx: int) -> void:
 	if abs(dx) < 4:
 		return
 	var dir := 1 if dx > 0 else -1
-	var near: bool = absi(cx - (x + frame_w / 2)) <= JIGGLE_RANGE
-	if cursor_dir != 0 and dir != cursor_dir and near:
+	if cursor_dir != 0 and dir != cursor_dir:
 		jiggle += 3
 	cursor_dir = dir
 	if jiggle >= 12 and grounded() and _interruptible():
@@ -430,14 +438,23 @@ func grounded() -> bool:
 	return y >= screen_h - frame_h
 
 func held() -> bool:
-	return state == "carry" or (state == "timed" and t_next == "carry")
+	return state == "carry" or (state == "clip" and clip_next == "carry")
 
 func scare() -> void:
 	if held():
 		return
-	if state == "timed" and t_anim == "startle":
+	if state == "clip" and clip_anim == "startle":
 		return
-	_timed("startle", _ticks("startle"), "idle")
+	_clip("startle", _ticks("startle"), "idle", true)
+
+# Right-click: a gentle pet on the head. Low-priority (unlocked) so a mood flip
+# can still take over. Falls back to idle until a "pet" anim is authored.
+func pet_touch() -> void:
+	if held():
+		return
+	if state == "clip" and clip_anim == "pet":
+		return
+	_clip("pet", _ticks("pet"), "idle")
 
 func do_jump() -> void:
 	if cfg.gravity and grounded():
@@ -446,10 +463,10 @@ func do_jump() -> void:
 
 func hold(px: int, py: int) -> void:
 	if not held():
-		_timed("grab", _ticks("grab"), "carry")
+		_clip("grab", _ticks("grab"), "carry")
 	x = px - frame_w / 2
 	y = py - frame_h / 2
 
 func release() -> void:
 	if held():
-		_timed("drop", _ticks("drop"), "idle")
+		_clip("drop", _ticks("drop"), "idle")
