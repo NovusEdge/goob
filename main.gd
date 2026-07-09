@@ -57,6 +57,11 @@ var commenter: Commenter = null
 var frame := 0
 var last_comment_frame := -100000
 
+const DAEMON_URL := "http://127.0.0.1:8787/tick"
+var http: HTTPRequest = null
+var in_flight := false
+var pending_mood := 0
+
 func _mood_key(m: int) -> String:
 	match m:
 		1: return "alert"
@@ -125,6 +130,11 @@ func _ready() -> void:
 	debug_layer.visible = _debug_enabled()
 	_make_bubble()
 	commenter = Commenter.new()
+
+	http = HTTPRequest.new()
+	http.timeout = 6.0
+	add_child(http)
+	http.request_completed.connect(_on_tick_completed)
 
 func _make_bubble() -> void:
 	bubble_layer = CanvasLayer.new()
@@ -323,7 +333,40 @@ func _on_mood_edge(new_mood: int) -> void:
 	if frame - last_comment_frame < COMMENT_COOLDOWN_TICKS:
 		return
 	last_comment_frame = frame
-	_fallback_comment(new_mood)
+	if in_flight:
+		return                          # one HTTPRequest node = one request
+	_request_tick(new_mood)
+
+func _request_tick(mood: int) -> void:
+	pending_mood = mood
+	var body := JSON.stringify({
+		"pet_state": pet.state,
+		"mood": _mood_key(mood),
+		"event": "mood_changed",
+		"user_text": null,
+	})
+	var err := http.request(DAEMON_URL, ["Content-Type: application/json"],
+		HTTPClient.METHOD_POST, body)
+	if err != OK:
+		_fallback_comment(mood)          # daemon unreachable -> canned
+	else:
+		in_flight = true
+
+func _on_tick_completed(result: int, code: int, _headers: PackedStringArray,
+		body: PackedByteArray) -> void:
+	in_flight = false
+	if result == HTTPRequest.RESULT_SUCCESS and code == 200:
+		var data = JSON.parse_string(body.get_string_from_utf8())
+		if typeof(data) == TYPE_DICTIONARY:
+			var st := String(data.get("state", ""))
+			if st != "":
+				pet.drive_state(st)
+			var say := String(data.get("say", ""))
+			if say.strip_edges() != "" and say != last_say:
+				last_say = say
+				_show_bubble(say)
+			return
+	_fallback_comment(pending_mood)      # any failure -> canned, never silence
 
 # Canned comment for a mood (also the fallback when the daemon is unreachable).
 func _fallback_comment(mood: int) -> void:
