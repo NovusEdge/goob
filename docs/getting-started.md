@@ -45,6 +45,26 @@ everywhere except the pet itself, so your desktop stays fully usable.
 | Left-drag | Pick up and move |
 | Right-click | Pet it on the head |
 
+## LLM commentary (optional)
+
+goob comments on what your machine is doing. Out of the box it uses a built-in
+list of canned lines — no setup, no network. For live, in-character remarks,
+run the optional Python daemon:
+
+1. `pip install -r requirements.txt`
+2. Set a provider key in your environment (litellm's vars), e.g.
+   `export OPENAI_API_KEY=…`, and optionally `export GOOB_MODEL=gpt-4o-mini`.
+3. `just daemon`
+
+While the daemon runs, goob's comments are generated live and it can nudge its
+own behaviour. Its voice is `PERSONALITY.md` — edit it to taste. Stop the daemon
+and goob silently falls back to canned lines.
+
+**Fully local / private:** litellm speaks to Ollama too — install Ollama, then
+`export GOOB_MODEL=ollama/llama3` (or any pulled model). Nothing leaves your
+machine. Only the daemon ever reads system state, and only an allowlisted
+digest (watched processes, battery, thermal) — never your full process list.
+
 ## Make it your creature
 
 goob is **not hardcoded to a cat.** A creature is defined by two data pieces —

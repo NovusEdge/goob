@@ -1,8 +1,10 @@
 # goob — lil vro 🥀
 
 A desktop pet cat that lives on your screen — wanders, naps, chases your cursor,
-and reacts to what your machine is doing. Built in **Godot 4**. Bring your own
-spritesheets.
+and reacts to what your machine is doing — commenting in a speech bubble, from a
+built-in line list or (optionally) a local/cloud LLM daemon. See
+[Getting Started](docs/getting-started.md#llm-commentary-optional). Built in
+**Godot 4**. Bring your own spritesheets.
 
 ## Run
 
