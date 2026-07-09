@@ -19,7 +19,7 @@ def load_personality(path="PERSONALITY.md"):
     try:
         with open(path) as f:
             return f.read().strip()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         print("goob: no PERSONALITY.md, using built-in prompt")
         return "You are goob, a terse, affectionate desktop cat. Comment briefly."
 
