@@ -27,6 +27,9 @@ const PLAY_LOOPS := 3      # bat-loops before the pet is satisfied
 const PLAY_LEASH := 60     # cursor drifts this far -> chase it again
 const REACH_DIST := 30     # "arrived at the cursor" threshold
 
+# Behaviours the LLM may push the pet into (must match daemon agent.py DRIVABLE).
+const DRIVABLE := ["idle", "wander", "follow", "jump", "zoomies"]
+
 var cfg: PetConfig
 var loop_lens: Dictionary  # animation name -> ticks for one full loop
 var play_available := false # does a real "play" animation resolve?
@@ -455,6 +458,34 @@ func pet_touch() -> void:
 	if state == "clip" and clip_anim == "pet":
 		return
 	_clip("pet", _ticks("pet"), "idle")
+
+# Externally-chosen behaviour (from the LLM). Whitelisted + guarded so a bad
+# model turn can't wedge the pet; returns false (no-op) if it couldn't apply.
+func drive_state(name: String) -> bool:
+	if held() or not _interruptible():
+		return false
+	match name:
+		"idle":
+			state = "idle"
+			timer = 0
+		"wander":
+			target_x = randi() % maxi(1, screen_w - frame_w)
+			state = "wander"
+		"follow":
+			if not cfg.follow_cursor:
+				return false
+			state = "follow"
+			timer = 0
+		"jump":
+			if not (cfg.gravity and grounded()):
+				return false
+			state = "jump"
+			timer = 0
+		"zoomies":
+			_start_zoomies()
+		_:
+			return false
+	return true
 
 func do_jump() -> void:
 	if cfg.gravity and grounded():
