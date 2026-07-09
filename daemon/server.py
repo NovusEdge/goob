@@ -6,6 +6,8 @@ GOOB_API_KEY / VERTEXAI_API_KEY / GEMINI_API_KEY / etc. Localhost-only.
 """
 import json
 import os
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from daemon import agent
@@ -25,6 +27,11 @@ BUILTIN_PROMPT = (
 BUILTIN_PERSONALITY = "You are a dry, affectionate, slightly chaotic cat."
 
 _SYSTEM = ""
+
+_STATS_LOCK = threading.Lock()
+_ticks = 0
+_spend_usd = 0.0
+_last_latency_ms = 0.0
 
 
 def load_dotenv(path=".env"):
@@ -85,6 +92,7 @@ def compose_system(prompt_path="config/PROMPT.md",
 
 def llm_completion(messages, tools, tool_choice):
     """Adapt litellm's response object to the normalized dict run_agent wants."""
+    global _spend_usd
     import litellm
     model = os.environ.get("GOOB_MODEL", DEFAULT_MODEL)
     kwargs = {}
@@ -103,6 +111,19 @@ def llm_completion(messages, tools, tool_choice):
             kwargs["api_key"] = api_key
     resp = litellm.completion(model=model, messages=messages, tools=tools,
                               tool_choice=tool_choice, **kwargs)
+    # litellm prices the call; None/AttributeError for unpriceable models (Ollama).
+    cost = None
+    try:
+        cost = resp._hidden_params.get("response_cost")
+    except AttributeError:
+        cost = None
+    if cost is None:
+        try:
+            cost = litellm.completion_cost(resp)
+        except Exception:
+            cost = 0.0
+    with _STATS_LOCK:
+        _spend_usd += cost or 0.0
     m = resp.choices[0].message
     calls = [{"id": tc.id,
               "function": {"name": tc.function.name,
@@ -119,13 +140,37 @@ class Handler(BaseHTTPRequestHandler):
         try:
             n = int(self.headers.get("Content-Length", 0))
             facts = json.loads(self.rfile.read(n) or b"{}")
+            t0 = time.perf_counter()
             out = agent.run_agent(facts, _SYSTEM, llm_completion)
+            dt_ms = (time.perf_counter() - t0) * 1000.0
+            global _ticks, _last_latency_ms
+            with _STATS_LOCK:
+                _ticks += 1
+                _last_latency_ms = dt_ms
             print("goob: tick mood=%r pet_state=%r -> %s"
                   % (facts.get("mood"), facts.get("pet_state"), out))
         except Exception as e:            # never 500 the pet; degrade to {}
             print("goob: /tick error:", e)
             out = {}
         body = json.dumps(out).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        if self.path != "/stats":
+            self.send_error(404)
+            return
+        with _STATS_LOCK:
+            payload = {
+                "model": os.environ.get("GOOB_MODEL", DEFAULT_MODEL),
+                "ticks": _ticks,
+                "spend_usd": round(_spend_usd, 6),
+                "last_latency_ms": round(_last_latency_ms, 1),
+            }
+        body = json.dumps(payload).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
