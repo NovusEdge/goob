@@ -152,12 +152,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:            # never 500 the pet; degrade to {}
             print("goob: /tick error:", e)
             out = {}
-        body = json.dumps(out).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        self._send_json(out)
 
     def do_GET(self):
         if self.path != "/stats":
@@ -170,16 +165,27 @@ class Handler(BaseHTTPRequestHandler):
                 "spend_usd": round(_spend_usd, 6),
                 "last_latency_ms": round(_last_latency_ms, 1),
             }
-        body = json.dumps(payload).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        self._send_json(payload)
+
+    def _send_json(self, obj):
+        body = json.dumps(obj).encode()
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionError):
+            # The pet's HTTP timeout is shorter than a slow LLM call, so it can
+            # hang up before we reply. The tick already ran; drop the response
+            # quietly instead of letting socketserver dump a traceback.
+            print("goob: client gone before reply (tick still counted)")
 
     def log_message(self, fmt, *args):
-        # Log every request (incl. the TUI's 1s /stats polls) so the control
-        # panel's log pane stays live. `fmt % args` is the stdlib request line.
+        # Log requests to the TUI's log pane, but skip the 1s /stats healthcheck
+        # polls — they'd drown out the interesting /tick lines.
+        if self.path == "/stats":
+            return
         print("goob:", fmt % args)
 
 
