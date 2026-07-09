@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -28,7 +29,7 @@ type model struct {
 
 	stats    Stats
 	statsErr error
-	w, h     int
+	w        int
 }
 
 func tickCmd() tea.Cmd {
@@ -51,6 +52,7 @@ func initialModel() model {
 		petSpark:    sparkline.New(28, 3),
 		daemonSpark: sparkline.New(28, 3),
 		logs:        vp,
+		statsErr:    errors.New("connecting…"),
 	}
 }
 
@@ -68,18 +70,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "r":
 			m.pet.start()
+			return m, nil
 		case "s":
 			m.pet.stop()
+			return m, nil
 		case "d":
 			m.daemon.start()
+			return m, nil
 		case "x":
 			m.daemon.stop()
+			return m, nil
 		}
 	case tea.WindowSizeMsg:
-		m.w, m.h = msg.Width, msg.Height
+		m.w = msg.Width
 		m.logs.Width = msg.Width - 2
 		m.logs.Height = max(3, msg.Height-13)
 	case tickMsg:
+		// sampleCPU walks /proc synchronously on the Update goroutine each tick;
+		// acceptable because the pet/daemon process trees are tiny.
 		m.petSpark.Push(m.pet.sampleCPU())
 		m.petSpark.Draw()
 		m.daemonSpark.Push(m.daemon.sampleCPU())
@@ -145,9 +153,17 @@ func (m model) View() string {
 }
 
 func main() {
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
+	m := initialModel()
+	final, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "tui error:", err)
 		os.Exit(1)
+	}
+	fm := final.(model)
+	fm.pet.stop()
+	fm.daemon.stop()
+	deadline := time.Now().Add(5 * time.Second)
+	for (fm.pet.running() || fm.daemon.running()) && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
 	}
 }
