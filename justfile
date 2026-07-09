@@ -21,3 +21,8 @@ check:
 # headless unit tests
 test:
     {{godot}} --headless --path . --script res://tests/test_commenter.gd
+
+# run the LLM daemon (opt-in). Needs `pip install -r requirements.txt` and a
+# provider key in the environment, e.g. OPENAI_API_KEY. GOOB_MODEL picks the model.
+daemon:
+    python3 -m daemon.server
