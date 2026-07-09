@@ -23,6 +23,7 @@ const RETREAT_NAP_LOOPS := 12  # a corner nap is a good long one
 const PLAY_LOOPS := 3      # bat-loops before the pet is satisfied
 const PLAY_LEASH := 60     # cursor drifts this far -> chase it again
 const REACH_DIST := 30     # "arrived at the cursor" threshold
+const JIGGLE_RANGE := 250   # only a jiggle THIS close to the pet summons it
 
 var cfg: PetConfig
 var loop_lens: Dictionary  # animation name -> ticks for one full loop
@@ -387,7 +388,8 @@ func _detect_jiggle(cx: int) -> void:
 	if abs(dx) < 4:
 		return
 	var dir := 1 if dx > 0 else -1
-	if cursor_dir != 0 and dir != cursor_dir:
+	var near: bool = absi(cx - (x + frame_w / 2)) <= JIGGLE_RANGE
+	if cursor_dir != 0 and dir != cursor_dir and near:
 		jiggle += 3
 	cursor_dir = dir
 	if jiggle >= 12 and grounded() and _interruptible():

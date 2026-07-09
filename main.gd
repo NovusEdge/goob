@@ -142,23 +142,24 @@ func _physics_process(_dt: float) -> void:
 		mood_timer = 0
 		pet.set_mood(_read_mood())
 
-	var cx := -1
-	var cy := -1
-	if mouse_pos.x >= 0 and (_over_cat(mouse_pos) or mouse_btn != 0):
-		cx = mouse_pos.x
-		cy = mouse_pos.y
+	# Global cursor: mouse_get_position() tracks the pointer across the whole
+	# screen (fullscreen overlay), so the pet can follow it anywhere. Clicks still
+	# pass through except on the cat, so button state comes from _input.
+	var gpos := DisplayServer.mouse_get_position()
+	var cx := gpos.x
+	var cy := gpos.y
 
-	# drag / scare — window is stationary so mouse_pos is absolute, no feedback
+	# drag / scare — button state is from clicks on the cat; position is global.
 	if mouse_btn == 1:
-		if not grabbing and _over_cat(mouse_pos):
+		if not grabbing and _over_cat(gpos):
 			grabbing = true
-			grab_off = Vector2i(mouse_pos.x - pet.x, mouse_pos.y - pet.y)
+			grab_off = Vector2i(gpos.x - pet.x, gpos.y - pet.y)
 		if grabbing:
-			pet.hold(mouse_pos.x - grab_off.x + body_w / 2, mouse_pos.y - grab_off.y + body_h / 2)
+			pet.hold(gpos.x - grab_off.x + body_w / 2, gpos.y - grab_off.y + body_h / 2)
 	elif pet.held():
 		grabbing = false
 		pet.release()
-	elif mouse_btn == 2 and _over_cat(mouse_pos):
+	elif mouse_btn == 2 and _over_cat(gpos):
 		grabbing = false
 		pet.scare()
 	else:
