@@ -28,6 +28,11 @@ var frame_w := 32
 var frame_h := 32
 var scaled_w := 160
 var scaled_h := 160
+# The pet's visible *body* — the opaque pixels within the padded frame. All
+# movement/clamping/clicking uses this; only drawing uses the full frame.
+var body_w := 160
+var body_h := 160
+var body_off := Vector2i.ZERO  # body's top-left within the frame (scaled px)
 var last_anim := ""
 
 var mouse_pos := Vector2i(-1, -1)
@@ -65,6 +70,21 @@ func _ready() -> void:
 	scaled_w = frame_w * config.scale
 	scaled_h = frame_h * config.scale
 
+	# The art rarely fills the whole frame — find its opaque bounds so the pet is
+	# positioned/clamped/clicked by its visible body, not the transparent padding
+	# (otherwise it "stops" a frame-of-padding short of the screen edge).
+	body_w = scaled_w
+	body_h = scaled_h
+	body_off = Vector2i.ZERO
+	if tex != null:
+		var img := tex.get_image()
+		if img != null:
+			var used := img.get_used_rect()
+			if used.size.x > 0 and used.size.y > 0:
+				body_off = Vector2i(used.position.x * config.scale, used.position.y * config.scale)
+				body_w = used.size.x * config.scale
+				body_h = used.size.y * config.scale
+
 	# loop lengths for every authored animation + every engine behaviour
 	var lens := {}
 	for a in sprite.sprite_frames.get_animation_names():
@@ -76,7 +96,7 @@ func _ready() -> void:
 	# walk under a taskbar that's rendered on a compositor layer above us.
 	var usable := DisplayServer.screen_get_usable_rect()
 	pet = PetBrain.new()
-	pet.setup(usable.end.x, usable.end.y, scaled_w, scaled_h, config, lens)
+	pet.setup(usable.end.x, usable.end.y, body_w, body_h, config, lens)
 
 func _find_sprite() -> AnimatedSprite2D:
 	for c in get_children():
@@ -113,7 +133,7 @@ func _physics_process(_dt: float) -> void:
 			grabbing = true
 			grab_off = Vector2i(mouse_pos.x - pet.x, mouse_pos.y - pet.y)
 		if grabbing:
-			pet.hold(mouse_pos.x - grab_off.x + scaled_w / 2, mouse_pos.y - grab_off.y + scaled_h / 2)
+			pet.hold(mouse_pos.x - grab_off.x + body_w / 2, mouse_pos.y - grab_off.y + body_h / 2)
 	elif pet.held():
 		grabbing = false
 		pet.release()
@@ -125,8 +145,11 @@ func _physics_process(_dt: float) -> void:
 
 	pet.update(cx, cy)
 
-	# AnimatedSprite2D is centered; pet.x/y is the top-left, like the Go version
-	sprite.position = Vector2(pet.x + scaled_w / 2.0, pet.y + scaled_h / 2.0)
+	# pet.x/y is the body's top-left; place the (centered) frame so the body lands
+	# there, accounting for the transparent padding offset inside the frame.
+	sprite.position = Vector2(
+		pet.x - body_off.x + scaled_w / 2.0,
+		pet.y - body_off.y + scaled_h / 2.0)
 	sprite.flip_h = pet.facing_left
 
 	var a := _resolve(pet.anim)
@@ -153,16 +176,16 @@ func mouse_btn_index(b: int) -> int:
 	return MOUSE_BUTTON_LEFT if b == 1 else MOUSE_BUTTON_RIGHT
 
 func _over_cat(p: Vector2i) -> bool:
-	return p.x >= pet.x and p.x < pet.x + scaled_w and p.y >= pet.y and p.y < pet.y + scaled_h
+	return p.x >= pet.x and p.x < pet.x + body_w and p.y >= pet.y and p.y < pet.y + body_h
 
 func _update_passthrough() -> void:
 	var x := pet.x
 	var y := pet.y
 	var poly := PackedVector2Array([
 		Vector2(x, y),
-		Vector2(x + scaled_w, y),
-		Vector2(x + scaled_w, y + scaled_h),
-		Vector2(x, y + scaled_h),
+		Vector2(x + body_w, y),
+		Vector2(x + body_w, y + body_h),
+		Vector2(x, y + body_h),
 	])
 	DisplayServer.window_set_mouse_passthrough(poly)
 
