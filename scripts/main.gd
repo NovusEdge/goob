@@ -278,7 +278,11 @@ func _physics_process(dt: float) -> void:
 
 	if agent_hsm != null:
 		agent_hsm.update(dt)
-		agent_poller.poll(float(Time.get_ticks_msec()) / 1000.0)
+		# Must be wall-clock (matches hooks/goob_hook.py's time.time()), not engine
+		# uptime — otherwise staleness never fires (huge negative delta) and the
+		# pet can get stuck in Reacting forever if the agent dies without a
+		# Stop/SessionEnd event.
+		agent_poller.poll(Time.get_unix_time_from_system())
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:

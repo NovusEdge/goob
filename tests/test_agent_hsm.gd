@@ -28,5 +28,9 @@ func _init() -> void:
 	hsm.dispatch(&"agent_sleep")
 	assert(hsm.get_active_state() == hsm.get_node("Sleeping"))
 
+	# wake -> back to Ambient
+	hsm.dispatch(&"agent_wake")
+	assert(hsm.get_active_state() == hsm.get_node("Ambient"))
+
 	print("test_agent_hsm OK")
 	quit()

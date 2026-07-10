@@ -23,6 +23,7 @@ test:
     {{godot}} --headless --path . --script res://tests/test_commenter.gd
     {{godot}} --headless --path . --script res://tests/test_drive_state.gd
     {{godot}} --headless --path . --script res://tests/test_agent_poller.gd
+    {{godot}} --headless --path . --script res://tests/test_agent_poller_node.gd
     {{godot}} --headless --path . --script res://tests/test_agent_hsm.gd
     {{godot}} --headless --path . --script res://tests/test_agent_tree.gd
     python3 tests/test_goob_hook.py

@@ -42,6 +42,8 @@ const AGENT_FILE := "/tmp/goob-agent.json"
 
 var hsm: LimboHSM
 var _prev: Dictionary = {}
+# Overridable so tests can point at a temp file instead of the real global path.
+var agent_file := AGENT_FILE
 
 func setup(target_hsm: LimboHSM) -> void:
 	hsm = target_hsm
@@ -49,7 +51,7 @@ func setup(target_hsm: LimboHSM) -> void:
 func poll(now_s: float) -> void:
 	if hsm == null:
 		return
-	var cur := read_event(AGENT_FILE)
+	var cur := read_event(agent_file)
 	var reacting: bool = hsm.get_active_state() == hsm.get_node("Reacting")
 	var ev := decide(_prev, cur, now_s, reacting)
 	if not cur.is_empty() and (_prev.get("ts") != cur.get("ts") or _prev.get("token") != cur.get("token")):
