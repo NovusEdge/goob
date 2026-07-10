@@ -1,154 +1,209 @@
 # goob — agent-reactive behavior via LimboAI
 
 **Date:** 2026-07-10
-**Status:** approved design, pre-implementation
+**Status:** approved design + Opus review folded in, pre-implementation
 
 ## Goal
 
-Make the pet react, in near-real-time, to what your local AI coding agent
-(Claude Code) is doing — thinking when you prompt, busy while tools run,
-zoomies on a subagent, celebrate when a task finishes, startle on error, sleep
-when the session ends. Idea borrowed from `clawd-on-desk`; the reaction is
-deterministic and works with zero daemon, with an optional LLM-narrated
-`say` layered on top when the daemon is up.
+Make the pet react, in near-real-time, to what your local Claude Code session
+is doing — attentive while you prompt and tools run, zoomies when a subagent
+finishes, a celebratory zoomies + "✅" when the task completes, calm when the
+session ends. Idea borrowed from `clawd-on-desk`; the reaction is deterministic
+and works with zero daemon.
 
-This is also the first use of **LimboAI** in goob: the pet's top-level behavior
-becomes a hierarchical state machine (HSM), and the agent-reaction dispatch
-becomes a behavior tree (BT). We learn HSM+BT on one real vertical slice
-instead of rewriting the whole brain.
+Also the first use of **LimboAI** in goob: the pet's top-level behavior becomes
+a hierarchical state machine (HSM), and the agent-reaction dispatch becomes a
+behavior tree (BT). We learn HSM+BT on one real vertical slice.
+
+## Feature flag & arbitration
+
+Gated behind **`GOOB_HSM`** (env var or `.env` line, mirroring `DEBUG`), default
+off:
+
+- **off** — today's behavior exactly. Poller + HSM never instantiated.
+- **on** — `main.gd` adds the `AgentEventPoller` + `LimboHSM` nodes.
+
+**No two-FSM conflict.** `pet.gd` stays the sole owner of `pet.state`, animation,
+and position. The HSM drives the pet only through the *existing*
+`pet.drive_state(name)` channel — the same entry point the LLM daemon already
+uses. `pet.gd` already tolerates external drives. Ambient = HSM hands-off;
+Reacting/Sleeping = HSM calls `drive_state(...)`.
+
+**No `pet.gd` changes needed.** Every MVP reaction maps to a verb `drive_state`
+already accepts (`idle`, `zoomies`). Startle/error would need `scare()` (a
+different channel) and a reliable failure event — neither is in scope (below).
 
 ## Architecture
 
 Two orthogonal concerns:
 
-- **Transport** — how an agent event reaches the pet. A Claude Code hook writes
-  the latest event to one small JSON file; the pet polls it. No server, no
-  ports, no connection errors; the hook writes whether or not the pet/daemon
-  are running.
-- **Behavior** — how the pet decides what to do. A `LimboHSM` owns top-level
-  modes; a BT dispatches the reaction.
+- **Transport** — a Claude Code hook writes the latest event to one small JSON
+  file; the pet polls it. No server, no ports; the hook writes whether or not
+  the pet/daemon are running.
+- **Behavior** — a `LimboHSM` owns top-level modes; a BT dispatches the reaction.
 
 ```
-Claude Code hook  ──stdin JSON──▶  hooks/goob_hook.py (stdlib)
-                                        │ atomic write
-                                        ▼
-                              /tmp/goob-agent.json   {event, ts}
-                                        │ AgentEventPoller reads ~4 Hz
-                                        ▼  sets blackboard agent_event / agent_event_ts
-   LimboHSM (pet root)
-   ├── Ambient    ← default; delegates to existing pet.gd action-picking
-   ├── Reacting   ← guard: agent_event fresh (< 8 s)
-   │   └── BTState → BTPlayer runs the reaction tree (below)
-   └── Sleeping   ← agent SessionEnd, or user idle
+Claude Code hook  ──argv event name──▶  hooks/goob_hook.py (stdlib)
+                                             │ atomic write
+                                             ▼
+                                   /tmp/goob-agent.json  {token, ts}
+                                             │ AgentEventPoller reads ~4 Hz
+                                             ▼
+   main.gd (GOOB_HSM on):
+     poller sets blackboard token + ts, then hsm.dispatch(<event>)
+                                             │
+   LimboHSM (on the pet)
+   ├── Ambient    ← hands-off; pet.gd self-drives (unchanged)
+   ├── Reacting   ← BTState runs the reaction tree
+   └── Sleeping   ← calm (drive idle)
 ```
 
-### Reaction tree (inside `Reacting`)
+## Verified event mapping (Claude Code hook → goob token)
 
-```
-BTSelector
-├── BTSequence [BTCondition event==done]     → PlayZoomies, EmitSay("✅ done")
-├── BTSequence [BTCondition event==error]    → Startle,     EmitSay("💥")
-├── BTSequence [BTCondition event==subagent] → PlayZoomies
-└── BusyIdle                                  (thinking / working fallback)
-```
+Standard CC hook events only (verified against the installed set:
+`PreToolUse, PostToolUse, UserPromptSubmit, Notification, Stop, SubagentStop,
+PreCompact, SessionStart, SessionEnd`). Unknown/unmapped events → no file write.
 
-Custom tasks are GDScript (`extends BTAction`, override `_tick()` →
-`SUCCESS/FAILURE/RUNNING`; `_enter/_exit` as needed). They appear live in
-LimboAI's visual debugger as they tick.
+| CC hook          | token    | HSM dispatch  | Reaction                    |
+|------------------|----------|---------------|-----------------------------|
+| SessionStart     | wake     | `agent_wake`  | → Ambient                   |
+| UserPromptSubmit | thinking | `agent_event` | BusyIdle (pin idle)         |
+| PreToolUse       | working  | `agent_event` | BusyIdle (pin idle)         |
+| PostToolUse      | working  | `agent_event` | BusyIdle (pin idle)         |
+| SubagentStop     | subagent | `agent_event` | Zoomies (one-shot)          |
+| Stop             | done     | `agent_event` | Zoomies + speak "✅" (one-shot)|
+| SessionEnd       | sleep    | `agent_sleep` | → Sleeping (calm)           |
+
+**Out of scope (no standard hook / needs pet.gd surface):** error/startle (no
+CC failure event — would require parsing the `PostToolUse` payload), permission
+bubbles (Notification), PreCompact. Add later.
 
 ## Components & interfaces
 
 ### 1. `hooks/goob_hook.py`
-- **Does:** reads Claude Code hook JSON on stdin, maps the hook event name to a
-  goob event token, atomically writes `/tmp/goob-agent.json` = `{"event": <token>, "ts": <unix>}`.
-- **Depends on:** Python 3 stdlib only. No uv env, no deps — runs even if the
-  daemon is never installed.
-- **Invoked by:** a documented `~/.claude/settings.json` hooks snippet (manual
-  install; not auto-written into the user's config).
-- **Atomic write:** write temp + `os.replace` so the poller never reads a torn file.
+- **Does:** takes the CC event name as `argv[1]`, maps it to a goob token via a
+  dict, atomically writes `/tmp/goob-agent.json` = `{"token": <str>, "ts": <float>}`.
+  Unknown event → exit 0, no write. Any error is swallowed (never wedge CC).
+- **`ts` is `time.time()` (float)** — integer seconds would collapse two events
+  in the same second (UserPromptSubmit then PreToolUse) into one.
+- **Atomic:** write temp in the same dir + `os.replace`, so the poller never
+  reads a torn file.
+- **Depends on:** Python 3 stdlib only. Runs even if the daemon is never set up.
+- **Installed via** a documented `~/.claude/settings.json` hooks snippet (manual;
+  not auto-written).
 
-### Event mapping (Claude Code hook → goob token)
-Only the high-signal events; unknown events are ignored (no file write).
+### 2. `AgentEventPoller` — `scripts/agent_poller.gd` (Node)
+- **Does:** on a 0.25 s `Timer`, reads `/tmp/goob-agent.json`. Tracks the last
+  seen `(ts, token)`. On a **new** `(ts, token)` pair: writes `agent_token` +
+  `agent_ts` to the shared blackboard, then `hsm.dispatch(<event for token>)`.
+- **Freshness:** each tick, if the last event is older than 8 s and the HSM is in
+  Reacting, dispatch `agent_stale` (→ Ambient). Keeps the pet from freezing mid
+  "working" if the agent is killed.
+- **Blackboard/HSM refs:** handed `hsm` (and `hsm.get_blackboard()`) at
+  construction by `main.gd`. Writes the HSM root scope so both the guards and the
+  BT conditions resolve the same vars (`get_var` walks up parent scopes).
+- **Pure parser** `AgentPoller.read_event(path) -> Dictionary` (static): returns
+  `{token, ts}` or `{}` — unit-testable without a scene tree.
+- **Threading:** main-thread `FileAccess` read of a tiny atomically-replaced file
+  is negligible and correct (scene tree is single-threaded).
 
-| Claude Code hook   | goob token | HSM/BT result        |
-|--------------------|-----------|-----------------------|
-| UserPromptSubmit   | thinking  | Reacting → BusyIdle   |
-| PreToolUse         | working   | Reacting → BusyIdle   |
-| SubagentStart      | subagent  | Reacting → PlayZoomies|
-| Stop               | done      | Reacting → Zoomies+say|
-| PostToolUseFailure / StopFailure | error | Reacting → Startle+say |
-| SessionEnd         | sleep     | Sleeping              |
+### 3. HSM — `scripts/agent_hsm.gd`
+- **Builds** a `LimboHSM` with three vanilla `LimboState`s (delegation via
+  `call_on_enter`/`call_on_update`, no subclasses):
+  - `Ambient` — no-op (pet.gd self-drives).
+  - `Reacting` — a `BTState` (below).
+  - `Sleeping` — `call_on_update` re-asserts `drive_state("idle")` (calm).
+- **Transitions** (event-based; LimboHSM fires on `dispatch`, not polled guards):
+  - `add_transition(Ambient, Reacting, &"agent_event")`
+  - `add_transition(Reacting, Ambient, &"agent_stale")`
+  - `add_transition(hsm.anystate(), Sleeping, &"agent_sleep")`
+  - `add_transition(Sleeping, Ambient, &"agent_wake")` and
+    `add_transition(Sleeping, Reacting, &"agent_event")`
+- **Init:** `hsm.initialize(pet_agent_node)`, `hsm.set_active(true)`; `main.gd`
+  calls `hsm.update(delta)` from `_physics_process` (or set update mode).
 
-### 2. `AgentEventPoller` (Godot node)
-- **Does:** every ~0.25 s, reads `/tmp/goob-agent.json`; if `ts` changed, sets
-  blackboard `agent_event` (token) and `agent_event_ts`. On `sleep`, no
-  freshness window — it latches until a newer event arrives.
-- **Depends on:** the LimboHSM's blackboard.
-- **Freshness:** the HSM treats `agent_event` as stale after 8 s → falls back to
-  `Ambient`. Keeps the pet from freezing mid-"working" if the agent is killed.
+### 4. Reaction BT — `scripts/bt/` custom `BTAction` tasks
+Built in code (`BehaviorTree.new().set_root_task(...)`), so it's exact and
+headless-testable; LimboAI's debugger still visualizes it live.
 
-### 3. `LimboHSM` on the pet
-- **States:** `Ambient`, `Reacting` (a `BTState`), `Sleeping`.
-- **Ambient:** delegates to existing `pet.gd` action-picking (wander/idle/jump/
-  zoomies by `.tres` weights). **`pet.gd` is not rewritten** — absorbed into the
-  tree later once the paradigm is comfortable.
-- **Transitions:** `Ambient → Reacting` when `agent_event` fresh and != `sleep`;
-  `Reacting → Ambient` when stale; `* → Sleeping` when token == `sleep`;
-  `Sleeping → Reacting/Ambient` on any fresh non-sleep event.
+```
+BTSelector
+├── BTSequence [IsToken("done")]     → Zoomies, Speak("✅ done")
+├── BTSequence [IsToken("subagent")] → Zoomies
+└── BusyIdle                          (thinking / working; the fallback)
+```
 
-### 4. Reaction BT tasks (GDScript)
-`PlayZoomies`, `Startle`, `BusyIdle`, `EmitSay` — each small, each calls into
-existing pet API (`drive_state()` for movement). New reaction anims
-(thinking/working) resolve through the creature's `.tres` `aliases` map, with
-`idle` as the fallback when a creature has no dedicated anim.
+- **`IsToken`** (`BTCondition`): `SUCCESS` iff `blackboard.get_var("agent_token")`
+  equals the exported `token` param, else `FAILURE`.
+- **`Zoomies`** (`BTAction`): **edge-triggered** — `_tick` calls
+  `agent.drive_state("zoomies")` **once** and returns `SUCCESS`. Never re-assert:
+  re-calling `_start_zoomies` each frame re-randomizes the dart target = jitter
+  (harmless today only because `_interruptible()` blocks re-entry — do not rely
+  on that). `zoomies` self-terminates (~10 s) on its own.
+- **`BusyIdle`** (`BTAction`): re-asserts `agent.drive_state("idle")` every
+  `_tick` and returns `RUNNING`. This holds — resetting `timer` each frame stops
+  pet.gd's `_decide()` from rolling an autonomous behavior. A single edge call
+  would flicker back to wandering within ~1 s.
+- **`Speak`** (`BTAction`): calls the debounced `main.speak_reaction(text, ts)`
+  once per event `ts`, returns `SUCCESS`.
 
-### 5. `EmitSay`
-- **Does:** triggers the existing `/tick` path with the agent event included so
-  the pet says something about the activity.
-- **Layering:** daemon up → LLM `say`; daemon down → canned line from
-  `config/comments.json` via the existing `_fallback_comment` path.
-- **Reuse:** the `/tick` payload already carries `event`; add the agent token to
-  it. No new daemon route.
+### 5. `Speak` / `main.speak_reaction(text, ts)`
+- **Does:** if `ts` differs from the last spoken `ts`, call
+  `dialog_face.speak(text)` directly — **no HTTP**. Race-free.
+- **Why not `/tick`:** `main.gd` has one `HTTPRequest` guarded by `in_flight`; an
+  out-of-band tick returns `ERR_BUSY` and the reaction BT re-runs every frame
+  while the event is fresh, so a raw tick would spam. Direct `speak()` sidesteps
+  both. LLM-narrated agent events are a **future** layer (piggyback the token on
+  the next scheduled `_maybe_comment`, keyed on `ts`).
 
 ## Data flow
 
-1. You submit a prompt in Claude Code → `UserPromptSubmit` hook fires →
-   `goob_hook.py` writes `{event:"thinking", ts:…}`.
-2. `AgentEventPoller` sees the new `ts`, sets blackboard `agent_event="thinking"`.
-3. HSM transitions `Ambient → Reacting`; the reaction BT falls through to
-   `BusyIdle`; `EmitSay` optionally fires.
-4. Tools run (`PreToolUse` → `working`), a subagent starts (`SubagentStart` →
-   `subagent` → zoomies), the task ends (`Stop` → `done` → zoomies + "✅").
-5. 8 s after the last event with nothing new → stale → HSM falls back to
-   `Ambient` and the pet resumes its normal life.
+1. You prompt → `UserPromptSubmit` hook → `goob_hook.py` writes `{token:"thinking", ts}`.
+2. Poller sees new `(ts, token)` → sets blackboard, `hsm.dispatch(&"agent_event")`.
+3. HSM `Ambient → Reacting`; BT falls through to `BusyIdle` → pet pins calm.
+4. Tools run (`working`, same). Subagent finishes (`subagent` → zoomies once).
+   Task ends (`Stop` → `done` → zoomies + "✅").
+5. 8 s with no new event → poller dispatches `agent_stale` → `Reacting → Ambient`;
+   pet resumes its normal life.
+6. `SessionEnd` → `agent_sleep` → `Sleeping` (calm) until a new event wakes it.
 
 ## Error handling
 
-- Hook script never blocks the agent: fast stdin read, atomic write, swallow all
-  errors (a broken pet must never wedge Claude Code).
-- Missing/torn file → poller reads nothing, blackboard unchanged.
-- Daemon down → `EmitSay` uses canned lines; state reactions are unaffected.
-- Agent killed mid-task → freshness timeout returns the pet to `Ambient`.
+- Hook never blocks CC: fast, atomic write, swallow all errors.
+- Missing/torn file → poller reads nothing (`{}`), no dispatch.
+- Daemon irrelevant — reactions and the emoji beat are daemon-free.
+- Agent killed mid-task → 8 s freshness returns the pet to Ambient.
+- Reactions are **best-effort**: `drive_state` no-ops when the pet is mid
+  `follow`/`play`/`zoomies`/`retreat` (`_interruptible()`), so an occasional
+  `done` beat can be missed. Acceptable for a pet; documented, not fixed.
 
 ## Testing
 
-One headless GDScript test (`just test` compatible): push a fake `agent_event`
-onto the blackboard, tick the HSM, assert (a) it enters `Reacting`, (b) the
-reaction BT selects the branch matching the token, (c) a stale timestamp returns
-it to `Ambient`. No hook-process or daemon dependency in the test.
+Two headless tests (`just test` style — `extends SceneTree`, `assert`, `quit()`):
+
+- `tests/test_agent_poller.gd` — `AgentPoller.read_event` on a temp file:
+  well-formed → `{token, ts}`; missing file → `{}`; malformed JSON → `{}`.
+- `tests/test_agent_hsm.gd` — build the HSM with a stub agent exposing
+  `drive_state(name)` (records calls); dispatch `agent_event` with
+  `agent_token="done"` → asserts active state is `Reacting`, the BT drove
+  `zoomies`, and `speak` fired once; dispatch `agent_stale` → back to `Ambient`.
+
+Neither test touches the hook process or the daemon.
 
 ## Scope guards (ponytail)
 
-**In:** Claude Code hooks only, one active session, the 6 events above, HSM+BT
-for the reaction slice, `pet.gd` preserved under `Ambient`.
+**In:** feature-flagged (`GOOB_HSM`, default off), Claude Code hooks only, one
+active session, the 6 verified tokens, HSM+BT for the reaction slice, `pet.gd`
+untouched (driven only via `drive_state`).
 
-**Out (add when actually needed):** clawd's 18-agent registry, permission-
-approval bubbles, multi-session tracking, per-agent process detection, migrating
-the rest of `pet.gd` into the tree.
+**Out (add when needed):** error/startle beat, permission bubbles, PreCompact,
+LLM-narrated agent events, clawd's 18-agent registry, multi-session tracking,
+migrating the rest of `pet.gd` into the tree, a dedicated sleep/think anim clip.
 
-## Install note
+## Notes
 
-LimboAI v1.8.0 GDExtension (`addons/limboai/`) is already installed and loads
-clean on Godot 4.7. Decide whether to commit the native binary or `.gitignore`
-it. CLAUDE.md's "Godot 4.3+" line is stale — the project runs 4.7; fix when docs
-are next touched.
+- LimboAI v1.8.0 GDExtension is committed at `addons/limboai/` and loads clean on
+  Godot 4.7 (`just check` passes). Bundled `README.md` lists 4.6 / up to 1.7.x —
+  the v1.8.0 release adds 4.7 support; verified by a clean headless load.
+- CLAUDE.md's "Godot 4.3+" line is stale — the project runs 4.7; fix when docs
+  are next touched.
