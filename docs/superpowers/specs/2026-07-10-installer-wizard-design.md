@@ -71,13 +71,16 @@ installer/
   step_apply.go      — render Plan, confirm, execute
   doctor.go          — dep probes (exec.LookPath, --version parse), OS hints
   registry.go        — Agent registry + FormatHandler interface
-  agents.go          — the shipped agent data (claude, cursor, gemini)
-  formats.go         — FormatHandler impls (settings-json shared by claude/gemini, cursor)
-  testdata/          — real captured configs per agent (golden fixtures)
+  agents.go          — the shipped agent data (claude, cursor, codex)
+  formats.go         — FormatHandler impls (settings-json for claude, cursor json, codex TOML)
   envfile.go         — parse/merge/serialize .env
   plan.go            — Mutation + WriteFile (backup-then-write)
+  testdata/          — real captured configs per agent (golden fixtures)
   *_test.go          — table-driven tests for registry/formats/envfile
 ```
+Plus `hooks/goob_codex_notify.py` (Codex dispatcher, in the existing `hooks/`).
+`installer/go.mod` takes one dependency: a Go TOML library, used only by the
+Codex handler for `config.toml`. Everything else is stdlib.
 
 ## Step 1 — Doctor (deps: detect + copy-paste)
 
@@ -152,24 +155,45 @@ directory instead: `<repo>/hooks/goob_hook.py`, where `<repo>` is `..` relative 
 `installer/` (made absolute), overridable with a `--repo-root` flag. Centralize in
 one path helper and unit-test that the resolved file exists.
 
-**Shipped agents (v1):** Claude Code (first-class), Cursor, Gemini CLI.
+**Shipped agents (v1):** Claude Code (first-class), Cursor, Codex.
 - **Claude Code** — `~/.claude/settings.json`, `hooks.<Event>[].hooks[]` array of
   `{type:"command", command:"…"}`. Known/verified format. EventMap:
   SessionStart→wake, UserPromptSubmit→thinking, PreToolUse→working,
   PostToolUse→working, SubagentStop→subagent, Stop→done, SessionEnd→sleep.
 - **Cursor** — `~/.cursor/hooks.json` (Cursor Agent hooks). Format + event names
   verified against Cursor's current hooks docs during implementation.
-- **Gemini CLI** — `~/.gemini/settings.json` command hooks. A settings.json shape;
-  reuses the Claude handler if close enough, else its own. Event names verified
-  during implementation.
-- **Free add:** CodeBuddy (`~/.codebuddy/settings.json`) is Claude-Code-compatible
-  — the same handler with a different path + EventMap. Add as a data entry if wanted.
+- **Codex** — the special case; see below.
+- **Free adds (data entries, not shipped by default):** Gemini CLI
+  (`~/.gemini/settings.json`) and CodeBuddy (`~/.codebuddy/settings.json`) both
+  reuse the settings-json handler with a different path + EventMap — add when wanted.
 
-**Codex is explicitly OUT of v1.** Its config is TOML (`~/.codex/config.toml`, no
-Go stdlib TOML) and its hook model is a single `notify` program that branches on
-the event type *at runtime* — you cannot pin a static `--token`, so it would need
-both a TOML handler and a dispatcher shim that re-introduces per-agent logic in
-Python, defeating the token-direct design. Add later as a distinct sub-project.
+### Codex — the exception (TOML + runtime dispatch)
+
+Codex does not use per-event JSON hooks. It fires a single `notify` **program**
+(configured in `~/.codex/config.toml`, e.g. `notify = ["python3", "…/goob_codex_notify.py"]`)
+and passes the event as a **JSON payload at call time**. Two consequences shape
+the design, both contained to Codex:
+
+1. **TOML handler.** Editing `config.toml` needs a real parser — the installer
+   takes **one dependency**, a Go TOML library (`github.com/pelletier/go-toml/v2`
+   or `BurntSushi/toml`). Writing a TOML round-tripper by hand is worse; this is
+   the justified exception to "stdlib-only". The Codex `FormatHandler` sets/removes
+   only the `notify` key (marker: the `notify` array references `goob_codex_notify.py`),
+   preserving all other config.toml content.
+2. **A dispatcher script** `hooks/goob_codex_notify.py` (stdlib, same
+   swallow-all-errors contract). It reads Codex's notification JSON (argv/stdin),
+   maps the event type → a goob token via a small Codex-specific map, and writes
+   `/tmp/goob-agent.json` — reusing `goob_hook.py`'s write logic (import or a shared
+   helper). **This is the one place a per-agent event→token map lives outside the Go
+   registry**, and it must, because Codex dispatches at runtime. Codex reaches only
+   the tokens its notify events expose (primarily turn-complete → `done`, and
+   approval → a token if available) — partial coverage, acceptable for best-effort.
+
+Exact `config.toml` `notify` schema and the notification payload's event field are
+captured as golden fixtures in the first implementation task (clawd-on-desk's
+`hooks/codex-*.js` as cross-reference). If Codex's current build exposes richer
+per-turn events only via its session JSONL (`~/.codex/sessions/`), that log-watcher
+path stays **out** — the installer wires the `notify` program only.
 
 > Implementation note: `clawd-on-desk` (`hooks/*-install.js`) already solved the
 > exact per-agent config shapes and is the reference to verify against; but goob
@@ -255,8 +279,9 @@ real agent's schema, so tests must run against **real captured configs, not
 hand-guessed strawmen**:
 - `testdata/` — a **golden fixture per agent captured from the real tool**: a real
   Claude `settings.json` containing unrelated hooks + MCP servers, a real Cursor
-  `hooks.json`, a real Gemini `settings.json`. "Preserve unrelated content" is
-  tested against reality.
+  `hooks.json`, a real Codex `config.toml` with unrelated keys. "Preserve unrelated
+  content" is tested against reality (the Codex handler must leave every non-`notify`
+  key + TOML formatting intact).
 - `formats_test.go` — for each handler: install into empty, install into the
   golden fixture (all unrelated content preserved), install-when-present
   (idempotent, no dup, marker replace), **round-trip: Install → Remove returns the
@@ -274,6 +299,9 @@ hand-guessed strawmen**:
 - `hooks/test_goob_hook.py` extension: `--token done` writes `{token:"done"}`;
   `--token bogus` and `--token` (no value) write nothing; existing event-name test
   still passes.
+- `hooks/test_goob_codex_notify.py` — a captured Codex notification JSON for
+  turn-complete maps to `{token:"done"}`; an unmapped/garbage payload writes
+  nothing (swallow-all-errors).
 
 **Prove the third agent's interface-fit BEFORE building it** — the first
 implementation task confirms Cursor's and Gemini's real schemas fit the
@@ -286,23 +314,27 @@ UI smoke.
 
 ## Open items to confirm during implementation (first task)
 
-- Capture real `~/.cursor/hooks.json` and `~/.gemini/settings.json` (+ event
-  names) as golden fixtures and confirm both fit the FormatHandler interface
-  **before** writing the handlers (clawd-on-desk `hooks/*-install.js` as
-  cross-reference). If Gemini's shape diverges, either give it its own handler or
-  swap it for CodeBuddy (reuses the Claude handler outright).
-- Whether Cursor/Gemini reuse the Claude settings-json handler or each needs its
-  own (decide once the fixtures are captured; the interface supports either).
+- Capture real `~/.cursor/hooks.json` and `~/.codex/config.toml` (+ event names)
+  as golden fixtures, plus a real Codex `notify` **notification payload** (to learn
+  the event field the dispatcher maps), **before** writing the handlers
+  (clawd-on-desk `hooks/cursor-*.js` / `hooks/codex-*.js` as cross-reference).
+- Confirm Cursor fits the JSON FormatHandler and Codex's `config.toml` round-trips
+  cleanly through the chosen TOML lib (preserving unrelated keys + formatting)
+  before building either handler.
+- Which goob tokens Codex's `notify` events can actually reach (turn-complete →
+  `done` is the safe assumption; anything more is a bonus).
 
 ## Scope guards
 
 **In:** `installer/` Go module, linear plan-then-apply wizard (transform-carrying
 mutations, re-read at apply), doctor (detect + copy-paste, incl. required
-`python3`), agent registry with 3 shipped agents (Claude Code, Cursor, Gemini) +
-marker-based install/remove, token-direct hook mode, `.env` merge, single
+`python3`), agent registry with 3 shipped agents (Claude Code, Cursor, Codex) +
+marker-based install/remove, token-direct hook mode + the Codex `notify`
+dispatcher (`goob_codex_notify.py`) with a TOML handler, `.env` merge, single
 backup-on-change, unit tests on the pure core with real golden fixtures.
 
-**Out (add when needed):** Codex (TOML + runtime-dispatch `notify` — a distinct
-sub-project needing a TOML handler + dispatcher shim), more agents, auto-install
-of deps, API-key validation, TUI-driver tests, release/packaging, auto-update,
-per-agent permission-approval flows (clawd's HTTP hooks).
+**Out (add when needed):** Gemini/CodeBuddy and other agents (easy settings-json
+data entries), Codex session-JSONL log-watching (richer events; the `notify`
+program is what v1 wires), auto-install of deps, API-key validation, TUI-driver
+tests, release/packaging, auto-update, per-agent permission-approval flows
+(clawd's HTTP hooks).
