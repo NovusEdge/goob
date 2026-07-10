@@ -12,6 +12,9 @@ docs/superpowers/
 .claude/
 CLAUDE.md
 
+# LimboAI sample project — the addon itself (addons/limboai/) is committed
+/demo/
+
 # Local env (DEBUG toggle etc.)
 .env
 
