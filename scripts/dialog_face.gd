@@ -232,6 +232,10 @@ func _effective_scale() -> Vector2:
 	return _base_scale * (PILL_SCALE if _collapsed else 1.0)
 
 func _apply_scale() -> void:
+	# Kill any running bounce first, else it keeps tweening scale toward the full
+	# size and overrides a collapse that lands mid-bounce (scale/collapse desync).
+	if _tween != null and _tween.is_running():
+		_tween.kill()
 	scale = _effective_scale()
 
 # --- persistence ---------------------------------------------------------
