@@ -435,8 +435,10 @@ git commit -m "feat(bt): reaction behavior tree — zoomies on done/subagent, pi
 - Test: `tests/test_agent_hsm.gd`
 
 **Interfaces:**
-- Consumes: `AgentTree.build()`; a `host: Node` to parent under; `pet` + `speaker` for the blackboard.
-- Produces: `AgentHsm.build(host: Node, pet, speaker) -> LimboHSM` — an initialized, active HSM with states named via transitions `agent_event`/`agent_stale`/`agent_sleep`/`agent_wake`. The poller (Task 5) writes `agent_token`/`agent_ts` to `hsm.get_blackboard()` and calls `hsm.dispatch(...)`.
+- Consumes: `AgentTree.build()`; a `host: Node` to parent under; `pet` for the blackboard.
+- Produces: `AgentHsm.build(host: Node, pet) -> LimboHSM` — an initialized, active HSM with states named via transitions `agent_event`/`agent_stale`/`agent_sleep`/`agent_wake`. The poller (Task 5) writes `agent_token`/`agent_ts` to `hsm.get_blackboard()` and calls `hsm.dispatch(...)`.
+
+**Note (speech cut):** there is no speech surface right now, so no `speaker` is wired. The committed `bt_speak` task null-guards on a missing `speaker` blackboard var and silently no-ops — reactions are movement-only.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -450,24 +452,20 @@ class StubPet extends RefCounted:
 	var drove: Array = []
 	func drive_state(n: String) -> bool: drove.append(n); return true
 
-class StubSpeaker extends RefCounted:
-	var said: Array = []
-	func speak_reaction(text: String, ts: float) -> void: said.append(text)
-
 func _init() -> void:
 	var host := Node.new(); host.name = "H"; get_root().add_child(host)
-	var pet := StubPet.new(); var spk := StubSpeaker.new()
-	var hsm := AgentHsm.build(host, pet, spk)
+	var pet := StubPet.new()
+	var hsm := AgentHsm.build(host, pet)
 
 	assert(hsm.get_active_state() == hsm.get_node("Ambient"))
 
-	# a "done" event -> Reacting -> tree drives zoomies + speaks
+	# a "done" event -> Reacting -> tree drives zoomies (speech is a no-op)
 	hsm.get_blackboard().set_var("agent_token", "done")
 	hsm.get_blackboard().set_var("agent_ts", 1.0)
 	hsm.dispatch(&"agent_event")
 	assert(hsm.get_active_state() == hsm.get_node("Reacting"))
 	hsm.update(0.0)
-	assert(pet.drove.has("zoomies") and spk.said.has("✅ done"))
+	assert(pet.drove.has("zoomies"))
 
 	# stale -> back to Ambient
 	hsm.dispatch(&"agent_stale")
@@ -500,7 +498,7 @@ extends RefCounted
 
 const AgentTreeScript := preload("res://scripts/agent_tree.gd")
 
-static func build(host: Node, pet, speaker) -> LimboHSM:
+static func build(host: Node, pet) -> LimboHSM:
 	var hsm := LimboHSM.new()
 	hsm.name = "AgentHSM"
 
@@ -523,7 +521,6 @@ static func build(host: Node, pet, speaker) -> LimboHSM:
 
 	hsm.initialize(host)
 	hsm.get_blackboard().set_var("pet", pet)
-	hsm.get_blackboard().set_var("speaker", speaker)
 	hsm.get_blackboard().set_var("agent_token", "")
 	hsm.get_blackboard().set_var("agent_ts", 0.0)
 	hsm.set_initial_state(ambient)
@@ -555,13 +552,13 @@ git commit -m "feat(hsm): Ambient/Reacting/Sleeping HSM wiring the reaction tree
 ### Task 5: Wire the poller + HSM into `main.gd` behind `GOOB_HSM`
 
 **Files:**
-- Modify: `scripts/main.gd` (`_ready` setup, `_physics_process` update, new `speak_reaction`, new poll)
+- Modify: `scripts/main.gd` (`_ready` setup + `_physics_process` update, behind `GOOB_HSM`)
 - Modify: `scripts/agent_poller.gd` (add the Node `poll()` that dispatches)
-- Modify: `justfile` (add the three new test lines)
+- Modify: `justfile` (add the new test lines)
 
 **Interfaces:**
-- Consumes: `AgentPoller.read_event/decide`, `AgentHsm.build`, `pet` (PetBrain), `dialog_face`.
-- Produces: a running reactive loop when `GOOB_HSM` is truthy; unchanged behavior otherwise.
+- Consumes: `AgentPoller.read_event/decide`, `AgentHsm.build(self, pet)`, `pet` (PetBrain).
+- Produces: a running reactive loop when `GOOB_HSM` is truthy; unchanged behavior otherwise. No speech (movement-only).
 
 - [ ] **Step 1: Add the poller Node behavior**
 
@@ -600,26 +597,23 @@ Add a flag read + node creation in `_ready()` (near the existing `http`/`DEBUG` 
 # agent-reactivity (opt-in): GOOB_HSM=1 makes the pet react to Claude Code.
 var agent_hsm: LimboHSM = null
 var agent_poller: AgentPoller = null
-var _last_react_ts := -1.0
 
 func _setup_agent_reactivity() -> void:
 	var flag := OS.get_environment("GOOB_HSM")
 	if flag == "" or flag == "0" or flag.to_lower() == "false":
 		return
-	agent_hsm = AgentHsm.build(self, pet, self)
+	agent_hsm = AgentHsm.build(self, pet)
 	agent_poller = AgentPoller.new()
 	add_child(agent_poller)
 	agent_poller.setup(agent_hsm)
-
-# Debounced reaction line (called by the Speak BT task; once per event ts).
-func speak_reaction(text: String, ts: float) -> void:
-	if ts == _last_react_ts:
-		return
-	_last_react_ts = ts
-	if text.strip_edges() != "" and dialog_face != null:
-		last_say = text
-		dialog_face.speak(text)
 ```
+
+**No speech wiring** — there is no speech surface right now (bubble removed).
+Reactions are movement-only; the committed `bt_speak` task null-guards on the
+absent `speaker` blackboard var and no-ops. Do NOT add a `speak_reaction` or a
+`speaker` — that is plumbing to nowhere. When a speech surface returns, set a
+`speaker` on the HSM blackboard in `AgentHsm.build` and give it a `speak_reaction`;
+nothing else changes.
 
 Call `_setup_agent_reactivity()` at the end of `_ready()`. In `_physics_process(delta)` add (guarded):
 
@@ -654,7 +648,7 @@ GOOB_HSM=1 just run
 # terminal B — simulate Claude Code events
 python3 hooks/goob_hook.py UserPromptSubmit   # pet pins calm
 python3 hooks/goob_hook.py SubagentStop        # zoomies
-python3 hooks/goob_hook.py Stop                # zoomies + "✅ done" bubble
+python3 hooks/goob_hook.py Stop                # zoomies (speech no-op for now)
 ```
 Expected: within ~0.25 s of each command the pet reacts; ~8 s after the last, it returns to normal wandering. With `GOOB_HSM` unset, none of this runs and the pet behaves exactly as before.
 
