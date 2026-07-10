@@ -47,13 +47,13 @@ var debug_label: Label = null
 var _last_dbg_key := ""      # dedupe the tagged stdout debug line (for the TUI)
 var _last_dbg_frame := 0
 
-# The speech bubble now lives on the DialogFace (the floating talking-head); the
+# Speech goes to the draggable bubble window (see scripts/bubble_window.gd); the
 # roaming cat no longer bubbles above itself. We just forward lines to it.
-var dialog_face: DialogFace = null
+var bubble: BubbleWindow = null
 var last_say := ""          # de-dup: never show the same line twice in a row
 
 const COMMENT_COOLDOWN_TICKS := 1200   # ~20s at 60fps — min gap between comments
-const HEARTBEAT_TICKS := 5400          # ~90s — pipe up on its own even with no mood change
+const HEARTBEAT_TICKS := 240          # ~90s — pipe up on its own even with no mood change
 var commenter: Commenter = null
 var frame := 0
 var last_comment_frame := -100000
@@ -130,7 +130,7 @@ func _ready() -> void:
 	debug_layer = $Debug
 	debug_label = $Debug/State
 	debug_layer.visible = _debug_enabled()
-	dialog_face = get_node_or_null("DialogSprite") as DialogFace
+	bubble = get_node_or_null("Bubble") as BubbleWindow
 	commenter = Commenter.new()
 
 	http = HTTPRequest.new()
@@ -205,7 +205,7 @@ func _physics_process(_dt: float) -> void:
 	if mouse_btn == 1:
 		# Cat grab yields to the face: a press over the floating face drags the
 		# face, not the cat (they can overlap when the cat is carried up to it).
-		if not grabbing and _over_cat(gpos) and not (dialog_face != null and dialog_face.over_face()):
+		if not grabbing and _over_cat(gpos):
 			grabbing = true
 			grab_off = Vector2i(gpos.x - pet.x, gpos.y - pet.y)
 		if grabbing:
@@ -221,11 +221,6 @@ func _physics_process(_dt: float) -> void:
 
 	pet.update(cx, cy)
 
-	# Mirror the roamer's sleep onto the face (pet.gd naps via a "clip" state
-	# playing the "sleep" animation — see pet.gd::_start_retreat / clip flow).
-	if dialog_face != null:
-		dialog_face.set_sleeping(pet.state == "clip" and pet.clip_anim == "sleep")
-
 	# pet.x/y is the body's top-left; place the (centered) frame so the body lands
 	# there, accounting for the transparent padding offset inside the frame.
 	sprite.position = Vector2(
@@ -240,10 +235,8 @@ func _physics_process(_dt: float) -> void:
 
 	_update_passthrough()
 
-	# Hand cursor over either grabbable thing (cat or face); arrow elsewhere.
-	# Doubles as a live hit-test indicator for the face.
-	var on_face := dialog_face != null and dialog_face.over_face()
-	if on_face or _over_cat(gpos):
+	# Hand cursor over the cat; arrow elsewhere.
+	if _over_cat(gpos):
 		Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND)
 	else:
 		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
@@ -288,12 +281,11 @@ func _over_cat(p: Vector2i) -> bool:
 	return p.x >= pet.x and p.x < pet.x + body_w and p.y >= pet.y and p.y < pet.y + body_h
 
 func _update_passthrough() -> void:
-	# The overlay allows a single passthrough polygon. Two interactive things (the
-	# cat and the floating face) can't share one polygon, but the pointer is only
-	# ever over one — so track it: use the face rect while hovering the face, the
-	# cat's body rect otherwise. Everything outside stays click-through.
-	if dialog_face != null and dialog_face.over_face():
-		var r := dialog_face.face_rect()
+	# One passthrough polygon, but the pointer is only ever over one interactive
+	# thing — so track it: the bubble rect while hovering the bubble, else the cat's
+	# body. Everything outside stays click-through to the desktop.
+	if bubble != null and bubble.over_bubble():
+		var r := bubble.panel_rect()
 		DisplayServer.window_set_mouse_passthrough(PackedVector2Array([
 			r.position,
 			Vector2(r.end.x, r.position.y),
@@ -350,6 +342,9 @@ const WATCH := ["gcc", "cc1", "clang", "rustc", "cargo", "npm", "webpack",
 # Fire a comment (mood edge or heartbeat), gated by the in-flight guard and the
 # cooldown. A blocked attempt is dropped, not queued.
 func _maybe_comment(mood: int, event: String) -> void:
+	# Let it sleep — no ambient/heartbeat chatter while the cat is napping.
+	if event == "heartbeat" and pet.state == "clip" and pet.clip_anim == "sleep":
+		return
 	if in_flight:
 		return                          # one HTTPRequest node = one request
 	if frame - last_comment_frame < COMMENT_COOLDOWN_TICKS:
@@ -383,8 +378,8 @@ func _on_tick_completed(result: int, code: int, _headers: PackedStringArray,
 			var say := String(data.get("say", ""))
 			if say.strip_edges() != "" and say != last_say:
 				last_say = say
-				if dialog_face != null:
-					dialog_face.speak(say)
+				if bubble != null:
+					bubble.show_line(say)
 			elif st != "" and not applied:
 				# LLM asked for an action that was rejected and said nothing -> canned
 				_fallback_comment(pending_mood)
@@ -396,8 +391,8 @@ func _fallback_comment(mood: int) -> void:
 	var line := commenter.pick(_mood_key(mood))
 	if line != "" and line != last_say:
 		last_say = line
-		if dialog_face != null:
-			dialog_face.speak(line)
+		if bubble != null:
+			bubble.show_line(line)
 
 func _read_mood() -> int:
 	var pct := _battery_pct()

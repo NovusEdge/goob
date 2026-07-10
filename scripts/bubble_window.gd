@@ -31,7 +31,7 @@ var _tween: Tween = null
 static func hold_secs(word_count: int) -> float:
 	return clampf(float(word_count) / READ_WPS, MIN_SECS, MAX_SECS)
 
-const DEBUG_STAY := true   # TEMP
+const DEBUG_STAY := false  # disabled for now
 
 func _ready() -> void:
 	visible = true
@@ -85,8 +85,8 @@ func over_bubble() -> bool:
 	return _root.visible and panel_rect().has_point(Vector2(DisplayServer.mouse_get_position()))
 
 func _close_rect() -> Rect2:
-	var t := _panel.get_global_transform_with_canvas()
-	return Rect2(t * _close.position, _close.size * t.get_scale())
+	var t := _close.get_global_transform_with_canvas()
+	return Rect2(t * Vector2.ZERO, _close.size * t.get_scale())
 
 # --- build ---------------------------------------------------------------
 
@@ -118,6 +118,7 @@ func _build() -> void:
 
 	_label = Label.new()
 	_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_label.custom_minimum_size = Vector2(MIN_WIDTH - PAD * 2, 0)
 	_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_label.add_theme_color_override("font_color", Color(0.12, 0.12, 0.14))
 	margin.add_child(_label)
@@ -125,8 +126,8 @@ func _build() -> void:
 	_close = TextureButton.new()
 	_close.texture_normal = load(CROSS_TEX)
 	_close.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_close.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_close.position = Vector2(-20, 4)
+	# Position at top-right corner of panel, inset by padding
+	_close.position = Vector2(MAX_WIDTH - 17 - 6, 6)  # 17 = button width, 6 = inset
 	_panel.add_child(_close)
 
 # Measures the wrapped text extent (via the label's font, clamped to
@@ -135,12 +136,15 @@ func _build() -> void:
 func _resize_to_text(text: String) -> void:
 	var font := _label.get_theme_font("font")
 	var font_size := _label.get_theme_font_size("font_size")
-	var avail_width := MAX_WIDTH - PAD * 2.0
-	var wrapped := font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, avail_width, font_size)
-	var panel_width := clampf(wrapped.x + PAD * 2.0, MIN_WIDTH, MAX_WIDTH)
-	var panel_height := wrapped.y + PAD * 2.0
-	_panel.size = Vector2(panel_width, panel_height)
-	_panel.position = Vector2(-panel_width - MARGIN, TOP)
+	var text_width := MAX_WIDTH - PAD * 2.0
+	# Constrain label width so autowrap works
+	_label.custom_minimum_size.x = text_width
+	_label.custom_maximum_size.x = text_width
+	# Calculate wrapped height
+	var wrapped := font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, text_width, font_size)
+	var panel_height := wrapped.y + PAD * 2.0 + 8  # +8 for some breathing room
+	_panel.size = Vector2(MAX_WIDTH, panel_height)
+	_panel.position = Vector2(-MAX_WIDTH - MARGIN, TOP)
 
 # Only interactivity: click the X. Global-cursor hit-test so it works despite
 # the passthrough / window offset.
