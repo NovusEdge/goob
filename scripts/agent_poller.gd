@@ -35,3 +35,26 @@ static func decide(prev: Dictionary, cur: Dictionary, now_s: float, reacting: bo
 	if reacting and not cur.is_empty() and now_s - float(cur.get("ts", now_s)) > STALE_AFTER_S:
 		return &"agent_stale"
 	return &""
+
+# --- Node wrapper: poll the file and dispatch HSM events ---
+
+const AGENT_FILE := "/tmp/goob-agent.json"
+
+var hsm: LimboHSM
+var _prev: Dictionary = {}
+
+func setup(target_hsm: LimboHSM) -> void:
+	hsm = target_hsm
+
+func poll(now_s: float) -> void:
+	if hsm == null:
+		return
+	var cur := read_event(AGENT_FILE)
+	var reacting: bool = hsm.get_active_state() == hsm.get_node("Reacting")
+	var ev := decide(_prev, cur, now_s, reacting)
+	if not cur.is_empty() and (_prev.get("ts") != cur.get("ts") or _prev.get("token") != cur.get("token")):
+		hsm.get_blackboard().set_var("agent_token", String(cur.get("token", "")))
+		hsm.get_blackboard().set_var("agent_ts", float(cur.get("ts", 0.0)))
+		_prev = cur
+	if ev != &"":
+		hsm.dispatch(ev)

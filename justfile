@@ -22,6 +22,10 @@ check:
 test:
     {{godot}} --headless --path . --script res://tests/test_commenter.gd
     {{godot}} --headless --path . --script res://tests/test_drive_state.gd
+    {{godot}} --headless --path . --script res://tests/test_agent_poller.gd
+    {{godot}} --headless --path . --script res://tests/test_agent_hsm.gd
+    {{godot}} --headless --path . --script res://tests/test_agent_tree.gd
+    python3 tests/test_goob_hook.py
 
 # run the LLM daemon (opt-in). uv reads pyproject.toml for deps (litellm). Load
 # your .env first (`set -a; source .env; set +a`) so the provider key is present.

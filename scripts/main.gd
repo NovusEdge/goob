@@ -64,6 +64,10 @@ var http: HTTPRequest = null
 var in_flight := false
 var pending_mood := 0
 
+# agent-reactivity (opt-in): GOOB_HSM=1 makes the pet react to Claude Code.
+var agent_hsm: LimboHSM = null
+var agent_poller: AgentPoller = null
+
 func _mood_key(m: int) -> String:
 	match m:
 		1: return "alert"
@@ -138,6 +142,17 @@ func _ready() -> void:
 	add_child(http)
 	http.request_completed.connect(_on_tick_completed)
 
+	_setup_agent_reactivity()
+
+func _setup_agent_reactivity() -> void:
+	var flag := OS.get_environment("GOOB_HSM")
+	if flag == "" or flag == "0" or flag.to_lower() == "false":
+		return
+	agent_hsm = AgentHsm.build(self, pet)
+	agent_poller = AgentPoller.new()
+	add_child(agent_poller)
+	agent_poller.setup(agent_hsm)
+
 func _find_sprite() -> AnimatedSprite2D:
 	for c in get_children():
 		if c is AnimatedSprite2D:
@@ -179,7 +194,7 @@ func _apply_screen_size() -> void:
 	w.size = scr
 	w.position = Vector2i.ZERO
 
-func _physics_process(_dt: float) -> void:
+func _physics_process(dt: float) -> void:
 	frame += 1
 	# ~every 2s, sample the machine's mood; comment on transitions.
 	mood_timer += 1
@@ -260,6 +275,10 @@ func _physics_process(_dt: float) -> void:
 		_last_dbg_frame = frame
 		print("goob-dbg: state=%s anim=%s mood=%s pos=%d,%d" % [
 			s, anim_name, mood_name, pet.x, pet.y])
+
+	if agent_hsm != null:
+		agent_hsm.update(dt)
+		agent_poller.poll(float(Time.get_ticks_msec()) / 1000.0)
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
