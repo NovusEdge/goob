@@ -47,11 +47,9 @@ var debug_label: Label = null
 var _last_dbg_key := ""      # dedupe the tagged stdout debug line (for the TUI)
 var _last_dbg_frame := 0
 
-const BUBBLE_TICKS := 240   # ~4s at 60fps
-var bubble_layer: CanvasLayer = null
-var bubble_panel: PanelContainer = null
-var bubble_label: Label = null
-var bubble_left := 0
+# The speech bubble now lives on the DialogFace (the floating talking-head); the
+# roaming cat no longer bubbles above itself. We just forward lines to it.
+var dialog_face: DialogFace = null
 var last_say := ""          # de-dup: never show the same line twice in a row
 
 const COMMENT_COOLDOWN_TICKS := 1200   # ~20s at 60fps — min gap between comments
@@ -132,52 +130,13 @@ func _ready() -> void:
 	debug_layer = $Debug
 	debug_label = $Debug/State
 	debug_layer.visible = _debug_enabled()
-	_make_bubble()
+	dialog_face = get_node_or_null("DialogSprite") as DialogFace
 	commenter = Commenter.new()
 
 	http = HTTPRequest.new()
 	http.timeout = 6.0
 	add_child(http)
 	http.request_completed.connect(_on_tick_completed)
-
-func _make_bubble() -> void:
-	bubble_layer = CanvasLayer.new()
-	add_child(bubble_layer)
-	bubble_panel = PanelContainer.new()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.1, 0.1, 0.12, 0.92)
-	sb.set_corner_radius_all(10)
-	sb.set_content_margin_all(8)
-	bubble_panel.add_theme_stylebox_override("panel", sb)
-	bubble_layer.add_child(bubble_panel)
-	bubble_label = Label.new()
-	bubble_label.add_theme_color_override("font_color", Color.WHITE)
-	bubble_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	# Give the label (and thus the PanelContainer) a real width to wrap within —
-	# without this the container collapses to ~1 char and text stacks vertically.
-	bubble_label.custom_minimum_size = Vector2(240, 0)
-	bubble_panel.add_child(bubble_label)
-	bubble_layer.visible = false
-	# ponytail: PanelContainer bubble; swap in the Pooklea nine-patch art later
-	# once we've confirmed it sizes to arbitrary text.
-
-func _show_bubble(text: String) -> void:
-	if text == "":
-		return
-	bubble_label.text = text
-	bubble_left = BUBBLE_TICKS
-	bubble_layer.visible = true
-	_position_bubble()   # place it immediately so a bubble shown mid-zoomies has a spot
-
-# Anchor the bubble above the pet's body, clamped on-screen.
-func _position_bubble() -> void:
-	var sz := bubble_panel.size
-	var bx: float = pet.x + body_w / 2.0 - sz.x / 2.0
-	var by: float = pet.y - sz.y - 8.0
-	var scr := DisplayServer.screen_get_size()
-	bx = clampf(bx, 0.0, float(scr.x) - sz.x)
-	by = clampf(by, 0.0, float(scr.y) - sz.y)
-	bubble_panel.position = Vector2(bx, by)
 
 func _find_sprite() -> AnimatedSprite2D:
 	for c in get_children():
@@ -244,7 +203,9 @@ func _physics_process(_dt: float) -> void:
 
 	# drag / scare — button state is from clicks on the cat; position is global.
 	if mouse_btn == 1:
-		if not grabbing and _over_cat(gpos):
+		# Cat grab yields to the face: a press over the floating face drags the
+		# face, not the cat (they can overlap when the cat is carried up to it).
+		if not grabbing and _over_cat(gpos) and not (dialog_face != null and dialog_face.over_face()):
 			grabbing = true
 			grab_off = Vector2i(gpos.x - pet.x, gpos.y - pet.y)
 		if grabbing:
@@ -260,6 +221,11 @@ func _physics_process(_dt: float) -> void:
 
 	pet.update(cx, cy)
 
+	# Mirror the roamer's sleep onto the face (pet.gd naps via a "clip" state
+	# playing the "sleep" animation — see pet.gd::_start_retreat / clip flow).
+	if dialog_face != null:
+		dialog_face.set_sleeping(pet.state == "clip" and pet.clip_anim == "sleep")
+
 	# pet.x/y is the body's top-left; place the (centered) frame so the body lands
 	# there, accounting for the transparent padding offset inside the frame.
 	sprite.position = Vector2(
@@ -274,14 +240,13 @@ func _physics_process(_dt: float) -> void:
 
 	_update_passthrough()
 
-	if bubble_layer.visible:
-		bubble_left -= 1
-		if bubble_left <= 0:
-			bubble_layer.visible = false
-		elif pet.state != "zoomies":
-			# While zooming the pet darts too fast to read a tracking bubble —
-			# freeze it where it appeared instead of following.
-			_position_bubble()
+	# Hand cursor over either grabbable thing (cat or face); arrow elsewhere.
+	# Doubles as a live hit-test indicator for the face.
+	var on_face := dialog_face != null and dialog_face.over_face()
+	if on_face or _over_cat(gpos):
+		Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND)
+	else:
+		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 
 	# Compute the readout every frame. The on-screen overlay is gated by DEBUG,
 	# but the tagged stdout line is ALWAYS emitted so the TUI can mirror state
@@ -323,15 +288,27 @@ func _over_cat(p: Vector2i) -> bool:
 	return p.x >= pet.x and p.x < pet.x + body_w and p.y >= pet.y and p.y < pet.y + body_h
 
 func _update_passthrough() -> void:
+	# The overlay allows a single passthrough polygon. Two interactive things (the
+	# cat and the floating face) can't share one polygon, but the pointer is only
+	# ever over one — so track it: use the face rect while hovering the face, the
+	# cat's body rect otherwise. Everything outside stays click-through.
+	if dialog_face != null and dialog_face.over_face():
+		var r := dialog_face.face_rect()
+		DisplayServer.window_set_mouse_passthrough(PackedVector2Array([
+			r.position,
+			Vector2(r.end.x, r.position.y),
+			r.end,
+			Vector2(r.position.x, r.end.y),
+		]))
+		return
 	var x := pet.x
 	var y := pet.y
-	var poly := PackedVector2Array([
+	DisplayServer.window_set_mouse_passthrough(PackedVector2Array([
 		Vector2(x, y),
 		Vector2(x + body_w, y),
 		Vector2(x + body_w, y + body_h),
 		Vector2(x, y + body_h),
-	])
-	DisplayServer.window_set_mouse_passthrough(poly)
+	]))
 
 # Map a canonical state name onto an animation the authored SpriteFrames has:
 # direct name, then ALIAS, then walk the FALLBACK chain toward idle.
@@ -406,7 +383,8 @@ func _on_tick_completed(result: int, code: int, _headers: PackedStringArray,
 			var say := String(data.get("say", ""))
 			if say.strip_edges() != "" and say != last_say:
 				last_say = say
-				_show_bubble(say)
+				if dialog_face != null:
+					dialog_face.speak(say)
 			elif st != "" and not applied:
 				# LLM asked for an action that was rejected and said nothing -> canned
 				_fallback_comment(pending_mood)
@@ -418,7 +396,8 @@ func _fallback_comment(mood: int) -> void:
 	var line := commenter.pick(_mood_key(mood))
 	if line != "" and line != last_say:
 		last_say = line
-		_show_bubble(line)
+		if dialog_face != null:
+			dialog_face.speak(line)
 
 func _read_mood() -> int:
 	var pct := _battery_pct()

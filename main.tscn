@@ -3,6 +3,7 @@
 [ext_resource type="Texture2D" uid="uid://b1xk4qocvrr6t" path="res://assets/cat-grey.png" id="1_ig7tw"]
 [ext_resource type="Script" uid="uid://m8lffrbqwadq" path="res://scripts/main.gd" id="2_main"]
 [ext_resource type="Texture2D" uid="uid://b0ceu2rtqi6y0" path="res://assets/faces/anime/anime girl portrait pixelart all facial expressions.png" id="3_h2yge"]
+[ext_resource type="Script" uid="uid://dyshc56gec330" path="res://scripts/dialog_face.gd" id="4_dface"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_074og"]
 atlas = ExtResource("1_ig7tw")
@@ -811,7 +812,6 @@ animations = [{
 script = ExtResource("2_main")
 
 [node name="pet" type="AnimatedSprite2D" parent="." unique_id=2040810278]
-position = Vector2(24, 16)
 sprite_frames = SubResource("SpriteFrames_kapl2")
 animation = &"stop_sprint"
 autoplay = "idle"
@@ -835,7 +835,7 @@ theme_override_styles/normal = SubResource("StyleBoxFlat_dbg")
 text = "state:"
 
 [node name="DialogSprite" type="AnimatedSprite2D" parent="." unique_id=2066719838]
-position = Vector2(1133, 27)
+scale = Vector2(5, 5)
 sprite_frames = SubResource("SpriteFrames_kpq6v")
-animation = &"talking"
 autoplay = "default"
+script = ExtResource("4_dface")
