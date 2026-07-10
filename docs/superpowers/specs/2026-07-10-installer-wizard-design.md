@@ -1,7 +1,7 @@
 # goob — setup wizard (`installer/`, Go + Bubbletea)
 
 **Date:** 2026-07-10
-**Status:** approved design, pre-implementation (Opus review pending)
+**Status:** approved design + Opus review folded in, pre-implementation
 
 ## Goal
 
@@ -36,17 +36,26 @@ Welcome → Doctor → Agent hooks → Environment → Review & Apply → Done
 ```
 
 **Plan-then-apply.** No step writes to disk. Each step contributes to a shared
-`Plan` — an ordered list of pending mutations (`WriteFile{path, newContent,
-backupPath}`). Only the Review & Apply step, after an explicit confirm, executes
-the plan. This makes the whole wizard a pure function of user input until one
-commit point, and makes "what will this change?" fully inspectable.
+`Plan` — an ordered list of pending mutations. Only the Review & Apply step,
+after an explicit confirm, executes the plan.
+
+**Mutations carry a transform, not precomputed bytes.** A running agent (Claude,
+Cursor) may rewrite its own config between plan-build and apply; if we stored the
+new bytes computed at the Agents step, Apply would clobber the agent's concurrent
+edit. Instead each `WriteFile` holds a pure `transform func(current []byte) []byte`
+(e.g. `Handler.Install` bound to its agent + hookCmd). `Apply` **re-reads the file,
+applies the transform to the fresh bytes, backs up, writes.** The Review screen
+renders a diff computed at review time; if the fresh read at Apply differs from
+what was previewed, warn before writing.
 
 ```go
 type Plan struct { Steps []Mutation }
 type Mutation interface {
     Describe() string          // one-line summary for the review screen
-    Apply() error              // backup-then-write
+    Preview() (before, after []byte, err error)  // read current, apply transform — for the diff
+    Apply() error              // re-read fresh, transform, backup-then-write
 }
+// WriteFile{path, backupPath, transform func([]byte) ([]byte, error)}
 ```
 
 ### File structure
@@ -62,8 +71,9 @@ installer/
   step_apply.go      — render Plan, confirm, execute
   doctor.go          — dep probes (exec.LookPath, --version parse), OS hints
   registry.go        — Agent registry + FormatHandler interface
-  agents.go          — the shipped agent data (claude, cursor, codex)
-  formats.go         — FormatHandler impls (settings-json, cursor, codex)
+  agents.go          — the shipped agent data (claude, cursor, gemini)
+  formats.go         — FormatHandler impls (settings-json shared by claude/gemini, cursor)
+  testdata/          — real captured configs per agent (golden fixtures)
   envfile.go         — parse/merge/serialize .env
   plan.go            — Mutation + WriteFile (backup-then-write)
   *_test.go          — table-driven tests for registry/formats/envfile
@@ -75,16 +85,26 @@ Probes, each `{name, found bool, version string, ok bool, hint string}`:
 
 | dep | probe | needed for | min |
 |-----|-------|-----------|-----|
-| `godot` | `LookPath("godot")` or `$GODOT`; parse `--version` | the pet | 4.6 (LimboAI) |
+| `godot` | `LookPath("godot")` or `$GODOT`; parse `--version` | the pet | **4.7** (project targets it; LimboAI needs ≥4.6) |
+| `python3` | `LookPath("python3")` (then `python`) | **agent hooks** (required) | 3.x |
 | `uv` | `LookPath("uv")` | daemon (optional) | any |
 | `go` | `LookPath("go")` | TUI (optional) | any |
+
+**`python3` is required, not optional** — the hook is `#!/usr/bin/env python3`
+and the generated agent command hardcodes an interpreter. If absent, hooks
+silently no-op (the hook swallows all errors), so this is the single most likely
+invisible first-run failure. Doctor resolves the interpreter once (`python3`,
+falling back to `python`) and the agent-hooks step uses whatever exists.
 
 Renders a green/red checklist. For a missing/too-old dep, shows an
 **OS-specific copy-paste command** — never executed. OS detection: `runtime.GOOS`
 (darwin → `brew`), and on Linux read `/etc/os-release` `ID`/`ID_LIKE` →
 `pacman -S` / `apt install` / `dnf install`; unknown distro → the upstream URL
-(e.g. `https://docs.astral.sh/uv/`). godot is a special case (no universal
-package name) → link to the download / note the vendored engine expectation.
+(e.g. `https://docs.astral.sh/uv/`). **godot** has no universal package name and
+often lives off-PATH (a build under `~/Downloads` that moves) → the "missing"
+hint tells the user to **set `GODOT=/path/to/godot`** (which the probe honors),
+not just a download link. Note: LimboAI is a vendored *addon* (`addons/limboai/`),
+so a stock Godot 4.7 build suffices — no custom engine.
 
 Doctor contributes **no** mutations — it's read-only advisory. optional deps
 being absent is a warning, not a blocker.
@@ -112,18 +132,44 @@ type FormatHandler interface {
 }
 ```
 
-`hookCmd` is the absolute path to `goob_hook.py` (resolved from the installer's
-own location / repo root) invoked in **token-direct** mode — see below.
+**The marker (required).** A goob-owned hook entry is identified by exactly one
+thing: **its command string contains `goob_hook.py`.** JSON configs have no
+comment field, so this substring IS the marker. Consequences, specified so every
+handler author gets it right:
+- `Install` = **remove-by-marker, then add** (not "append if absent"). This makes
+  re-runs idempotent (no duplicates) AND self-heals the "repo moved → absolute
+  path changed" case (the old, now-wrong entry is stripped and replaced). CLAUDE.md
+  notes the repo location moves, so this is a real case, not hypothetical.
+- `Remove` = remove-by-marker (drops exactly goob's entries, leaves the rest).
+- `Installed` = "any marker-matching entry present."
+- This also lets the wizard adopt hooks a user added by hand via the manual doc
+  (they contain `goob_hook.py` too) instead of duplicating them.
 
-**Shipped agents (v1):** Claude Code (first-class), Cursor, Codex.
+`hookCmd` is the absolute path to `goob_hook.py` invoked in **token-direct** mode
+(see below). **Resolution:** `os.Executable()` is wrong here — under `just install`
+(`go run .`) it points at a temp build dir. Resolve `hookCmd` from the working
+directory instead: `<repo>/hooks/goob_hook.py`, where `<repo>` is `..` relative to
+`installer/` (made absolute), overridable with a `--repo-root` flag. Centralize in
+one path helper and unit-test that the resolved file exists.
+
+**Shipped agents (v1):** Claude Code (first-class), Cursor, Gemini CLI.
 - **Claude Code** — `~/.claude/settings.json`, `hooks.<Event>[].hooks[]` array of
   `{type:"command", command:"…"}`. Known/verified format. EventMap:
   SessionStart→wake, UserPromptSubmit→thinking, PreToolUse→working,
   PostToolUse→working, SubagentStop→subagent, Stop→done, SessionEnd→sleep.
 - **Cursor** — `~/.cursor/hooks.json` (Cursor Agent hooks). Format + event names
   verified against Cursor's current hooks docs during implementation.
-- **Codex** — `~/.codex/` config. Format + event names verified against Codex's
-  current hooks docs during implementation.
+- **Gemini CLI** — `~/.gemini/settings.json` command hooks. A settings.json shape;
+  reuses the Claude handler if close enough, else its own. Event names verified
+  during implementation.
+- **Free add:** CodeBuddy (`~/.codebuddy/settings.json`) is Claude-Code-compatible
+  — the same handler with a different path + EventMap. Add as a data entry if wanted.
+
+**Codex is explicitly OUT of v1.** Its config is TOML (`~/.codex/config.toml`, no
+Go stdlib TOML) and its hook model is a single `notify` program that branches on
+the event type *at runtime* — you cannot pin a static `--token`, so it would need
+both a TOML handler and a dispatcher shim that re-introduces per-agent logic in
+Python, defeating the token-direct design. Add later as a distinct sub-project.
 
 > Implementation note: `clawd-on-desk` (`hooks/*-install.js`) already solved the
 > exact per-agent config shapes and is the reference to verify against; but goob
@@ -147,11 +193,20 @@ python3 goob_hook.py <CCEventName>     # existing: Claude-Code event → token
 
 The per-agent event→token mapping lives in the Go **registry**, which generates
 each agent's config to call `goob_hook.py --token <mapped-token>` on the agent's
-event. This means the mapping lives in exactly one place per language boundary
-and the hook stays a dumb sink. `--token` validates against the known token set
-(`wake/thinking/working/subagent/done/sleep`) and ignores unknowns, same
-swallow-all-errors contract as today. ~5-line addition; existing event-name mode
-and the shipped Claude Code tests are unaffected.
+event. `--token` guards a missing arg (`len(argv) < 3` → write nothing), validates
+against the known token set (`wake/thinking/working/subagent/done/sleep`), ignores
+unknowns — same swallow-all-errors contract as today. ~5-line addition; existing
+event-name mode and the shipped Claude Code tests are unaffected.
+
+**One honest caveat — the Claude Code map is duplicated.** `goob_hook.py`'s
+`EVENTS` dict (for event-name mode, kept for the manual doc) and the Go registry's
+Claude `EventMap` both encode SessionStart→wake…SessionEnd→sleep — the same map in
+two languages. We do **not** claim single-source. Instead: `EVENTS` stays canonical
+and a **cross-language test** asserts the Go Claude `EventMap` equals it (parse
+`goob_hook.py`'s `EVENTS` in the Go test, compare). `docs/agent-reactivity.md` gets
+a line: "prefer `just install`; the manual `settings.json` snippet is the fallback."
+Wizard-generated (`--token`) and manual (event-name) entries interoperate because
+both carry the `goob_hook.py` marker, so the wizard recognizes and can replace either.
 
 ## Step 3 — Environment (`.env`)
 
@@ -169,18 +224,22 @@ so the two agree). No dependency.
 ## Step 4 — Review & Apply
 
 Renders the full `Plan`: each mutation's `Describe()` (file, action, backup
-path). One key to confirm → `Apply()` each in order, showing per-step
-success/failure. On any failure, stop and report what succeeded (backups let the
-user restore). Then → Done screen with next steps (run `GOOB_HSM=1 just run`,
-etc.).
+path). One key to confirm → `Apply()` each in order. **Continue-on-error** (the
+writes are independent — one failing agent must not skip the rest), collecting
+per-mutation success/failure, then report all with backup paths (backups let the
+user restore). A mutation whose transform yields **unchanged** bytes is a no-op:
+no write, no backup. Then → Done screen with next steps (run `GOOB_HSM=1 just run`,
+register/verify, etc.).
 
 ## Safety
 
-- **Backup before every write:** `plan.go`'s `WriteFile.Apply` copies the
-  existing file to `<path>.goob-bak-<n>` before writing (n avoids clobbering a
-  prior backup). New files get no backup (nothing to lose).
-- **Idempotent:** install detects already-present hooks (no duplicate entries);
-  re-running Apply is a no-op if nothing changed.
+- **Backup on change:** `WriteFile.Apply` copies the existing file to a single
+  `<path>.goob-bak` (overwrite — no growing pile of `-<n>` files) **only when the
+  transform actually changes the content.** New files get no backup (nothing to
+  lose); unchanged content is skipped entirely.
+- **Idempotent via the marker:** `Install` = remove-by-marker + add, so
+  re-running produces identical content (no duplicate entries) and Apply becomes a
+  no-op.
 - **Uninstall:** deselecting an installed agent removes exactly goob's entries,
   leaving other hooks intact.
 - **Never touches disk before Apply.** A quit at any earlier step changes
@@ -191,39 +250,59 @@ etc.).
 ## Testing
 
 `go test ./...` in `installer/`, table-driven, **no real `~/` writes** — all
-handlers/parsers take and return bytes:
-- `formats_test.go` — for each FormatHandler: install into empty config, install
-  into a config with unrelated hooks (preserved), install-when-already-present
-  (idempotent, no dup), remove (leaves unrelated hooks), malformed input →
-  error not panic.
-- `envfile_test.go` — merge into empty, merge preserving unmanaged keys +
-  order + comments, blank key preserves existing.
-- `registry_test.go` — every shipped Agent has a non-empty EventMap whose values
-  are all valid goob tokens; ConfigPath set; Handler non-nil.
-- `doctor_test.go` — version parsing (`godot --version` string → semver, min
-  check) and OS-hint selection from a stubbed `/etc/os-release` `ID`.
-- A `goob_hook.py` test extension: `--token done` writes `{token:"done"}`;
-  `--token bogus` writes nothing; existing event-name test still passes.
+handlers/parsers take and return bytes. The hard, genuinely-risky part is each
+real agent's schema, so tests must run against **real captured configs, not
+hand-guessed strawmen**:
+- `testdata/` — a **golden fixture per agent captured from the real tool**: a real
+  Claude `settings.json` containing unrelated hooks + MCP servers, a real Cursor
+  `hooks.json`, a real Gemini `settings.json`. "Preserve unrelated content" is
+  tested against reality.
+- `formats_test.go` — for each handler: install into empty, install into the
+  golden fixture (all unrelated content preserved), install-when-present
+  (idempotent, no dup, marker replace), **round-trip: Install → Remove returns the
+  original bytes** (proves the marker is exact and removal is clean), malformed
+  input → error not panic.
+- `envfile_test.go` — merge into empty, merge preserving unmanaged keys + order +
+  comments, blank key preserves existing.
+- `registry_test.go` — every shipped Agent: non-empty EventMap whose values are all
+  valid goob tokens, ConfigPath set, Handler non-nil.
+- `crossmap_test.go` — the Go Claude `EventMap` equals `goob_hook.py`'s `EVENTS`
+  (parse the Python dict, compare) — catches CC-map drift across the two languages.
+- `doctor_test.go` — version parsing (`godot --version` / `python3 --version` →
+  semver, min check) and OS-hint selection from a stubbed `/etc/os-release` `ID`;
+  hookCmd path helper resolves to an existing file.
+- `hooks/test_goob_hook.py` extension: `--token done` writes `{token:"done"}`;
+  `--token bogus` and `--token` (no value) write nothing; existing event-name test
+  still passes.
+
+**Prove the third agent's interface-fit BEFORE building it** — the first
+implementation task confirms Cursor's and Gemini's real schemas fit the
+FormatHandler (capture the golden fixtures), so a mismatch surfaces before the
+handlers are written, not after.
 
 Bubbletea view/update wiring is thin glue over the tested core; no TUI-driver
 tests in v1 (the logic lives in pure, tested functions). A manual run is the
 UI smoke.
 
-## Open items to confirm during implementation
+## Open items to confirm during implementation (first task)
 
-- Exact Cursor (`~/.cursor/hooks.json`) and Codex (`~/.codex/…`) config schemas
-  and event names — verify against each agent's current hook docs (clawd-on-desk
-  as cross-reference) before writing their handlers/EventMaps.
-- Whether Cursor/Codex share a JSON shape close enough to reuse the Claude
-  settings-json handler or each needs its own (decide once schemas are confirmed;
-  the interface supports either).
+- Capture real `~/.cursor/hooks.json` and `~/.gemini/settings.json` (+ event
+  names) as golden fixtures and confirm both fit the FormatHandler interface
+  **before** writing the handlers (clawd-on-desk `hooks/*-install.js` as
+  cross-reference). If Gemini's shape diverges, either give it its own handler or
+  swap it for CodeBuddy (reuses the Claude handler outright).
+- Whether Cursor/Gemini reuse the Claude settings-json handler or each needs its
+  own (decide once the fixtures are captured; the interface supports either).
 
 ## Scope guards
 
-**In:** `installer/` Go module, linear plan-then-apply wizard, doctor
-(detect+copypaste), agent registry with 3 shipped agents + install/remove,
-token-direct hook mode, `.env` merge, backups, unit tests on the pure core.
+**In:** `installer/` Go module, linear plan-then-apply wizard (transform-carrying
+mutations, re-read at apply), doctor (detect + copy-paste, incl. required
+`python3`), agent registry with 3 shipped agents (Claude Code, Cursor, Gemini) +
+marker-based install/remove, token-direct hook mode, `.env` merge, single
+backup-on-change, unit tests on the pure core with real golden fixtures.
 
-**Out (add when needed):** more agents, auto-install of deps, API-key
-validation, TUI-driver tests, release/packaging, auto-update, per-agent
-permission-approval flows (clawd's HTTP hooks).
+**Out (add when needed):** Codex (TOML + runtime-dispatch `notify` — a distinct
+sub-project needing a TOML handler + dispatcher shim), more agents, auto-install
+of deps, API-key validation, TUI-driver tests, release/packaging, auto-update,
+per-agent permission-approval flows (clawd's HTTP hooks).
