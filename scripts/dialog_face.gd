@@ -34,12 +34,10 @@ func _ready() -> void:
 	_make_bubble()
 	_make_button()
 	_load_saved()          # may set position + _collapsed
-	_apply_scale()
+	_apply_scale()         # also pins the button
 	_apply_face()
-	_sync_button()
 
 func _physics_process(_dt: float) -> void:
-	_sync_button()               # keep the collapse button pinned to the face corner
 	if _talk_left > 0:
 		_talk_left -= 1
 		if _talk_left <= 0:
@@ -51,8 +49,8 @@ func _physics_process(_dt: float) -> void:
 # --- public API (called by main.gd) --------------------------------------
 
 func speak(text: String) -> void:
-	if _collapsed or text.strip_edges() == "":
-		return               # a collapsed pill stays quiet
+	if _collapsed or _sleeping or text.strip_edges() == "":
+		return               # a collapsed pill / sleeping face stays quiet
 	_talk_left = BUBBLE_TICKS
 	_bubble_label.text = text
 	_bubble_layer.visible = true
@@ -66,9 +64,8 @@ func set_sleeping(sleeping: bool) -> void:
 	_sleeping = sleeping
 	_apply_face()
 
-# Screen-space rect of the visible face. AnimatedSprite2D is centered, so the
-# top-left is position - size/2. The overlay window sits at (0,0) unscaled, so
-# world coords == screen coords (same as the cat in main.gd).
+# Canvas-space rect of the visible face (centered sprite: top-left = position -
+# size/2). Used for bubble/button placement, which live in the same viewport space.
 func face_rect() -> Rect2:
 	var fw := 0.0
 	var fh := 0.0
@@ -176,8 +173,7 @@ func _make_button() -> void:
 	_ui_layer.add_child(_collapse_btn)
 	_refresh_button_label()
 
-# Pin the button to the face's top-right corner in true screen space (the
-# global-canvas transform is offset-immune, matching over_face()).
+# Pin the button to the face's top-right corner (offset-immune transform, as in over_face()).
 func _sync_button() -> void:
 	if _collapse_btn == null or sprite_frames == null:
 		return
@@ -200,9 +196,7 @@ func _on_collapse_pressed() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		# get_global_mouse_position() is the cursor in the same canvas/world space
-		# as `position`, so grab math is offset-immune.
-		var gp := get_global_mouse_position()
+		var gp := get_global_mouse_position()   # canvas space, matches `position`
 		if event.pressed and over_face():
 			_pressing = true
 			_dragging = false
@@ -220,6 +214,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_dragging = true
 		if _dragging:
 			position = gp - _grab_off
+			_sync_button()   # button only moves on drag/collapse, not every frame
 
 func _toggle_collapse() -> void:
 	_collapsed = not _collapsed
@@ -237,6 +232,7 @@ func _apply_scale() -> void:
 	if _tween != null and _tween.is_running():
 		_tween.kill()
 	scale = _effective_scale()
+	_sync_button()   # collapse changed the face size; re-pin the button
 
 # --- persistence ---------------------------------------------------------
 
