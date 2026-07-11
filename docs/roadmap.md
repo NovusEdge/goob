@@ -22,13 +22,24 @@ engine code. In-code states use neutral engine verbs; `cat.tres`,
 `playful_cat.tres`, and `lazy_cat.tres` ship as examples. See
 [Behavior Model](behavior-model.md) and [Configuration](configuration.md).
 
+### Setup wizard
+
+`just install` runs a Go + Bubbletea wizard that detects agent configs (Claude
+Code, Codex, Cursor), registers goob hooks, scaffolds `.env`, and checks
+prereqs (Godot, uv, Go).
+
+### Agent-reactivity
+
+Opt-in (`GOOB_HSM=1`): the pet reacts to a local Claude Code or Codex session
+via a LimboAI HSM layered on top of normal behavior — perks up when thinking,
+works when tools run, settles when idle. See [Agent Reactivity](agent-reactivity.md).
+
 ## Next
 
 ### Config UI
 
-High-level knobs: scale, follow-cursor, action weights, etc.
-
-Open question: in-app Godot settings panel vs standalone launcher/wizard.
+High-level knobs: scale, follow-cursor, action weights, etc. In-app Godot
+settings panel (hotkey-toggled).
 
 ## Later
 
