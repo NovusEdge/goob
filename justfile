@@ -27,6 +27,8 @@ test:
     {{godot}} --headless --path . --script res://tests/test_agent_hsm.gd
     {{godot}} --headless --path . --script res://tests/test_agent_tree.gd
     python3 tests/test_goob_hook.py
+    python3 tests/test_goob_codex_notify.py
+    cd installer && go test ./...
 
 # run the LLM daemon (opt-in). uv reads pyproject.toml for deps (litellm). Load
 # your .env first (`set -a; source .env; set +a`) so the provider key is present.
@@ -36,3 +38,11 @@ daemon:
 # run the control-panel TUI (launches/monitors the pet + daemon)
 tui:
     cd tui && go run .
+
+# run the setup wizard (registers hooks, scaffolds .env)
+install:
+    cd installer && go build -o installer . && ./installer
+
+# build the installer binary (for distribution)
+build-installer:
+    cd installer && go build -o installer .

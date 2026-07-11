@@ -27,3 +27,4 @@ __pycache__/
 
 # TUI build artifact (go run leaves it; `just tui` rebuilds)
 tui/tui
+installer/installer
