@@ -1,12 +1,12 @@
-# Agent reactivity (opt-in)
+# Agent reactivity
 
-With `GOOB_HSM=1`, the pet reacts to your local Claude Code session via a hook
-that writes events to `/tmp/goob-agent.json`, polled by the pet.
+The pet reacts to your local Claude Code session via a hook that writes events
+to `/tmp/goob-agent.json`, polled by the pet. On by default; set `GOOB_HSM=0`
+to disable.
 
-## Enable
+## Setup
 
-1. Run the pet with the flag: `GOOB_HSM=1 just run` (or add `GOOB_HSM=1` to `.env`).
-2. Register the hook in `~/.claude/settings.json` (absolute path to this repo):
+Register the hook in `~/.claude/settings.json` (or run `just install`):
 
     ```json
     {

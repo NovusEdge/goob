@@ -30,9 +30,10 @@ prereqs (Godot, uv, Go).
 
 ### Agent-reactivity
 
-Opt-in (`GOOB_HSM=1`): the pet reacts to a local Claude Code or Codex session
-via a LimboAI HSM layered on top of normal behavior — perks up when thinking,
-works when tools run, settles when idle. See [Agent Reactivity](agent-reactivity.md).
+The pet reacts to a local Claude Code or Codex session via a LimboAI HSM
+layered on top of normal behavior — perks up when thinking, works when tools
+run, settles when idle. On by default; `GOOB_HSM=0` to disable. See
+[Agent Reactivity](agent-reactivity.md).
 
 ## Next
 

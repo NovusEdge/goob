@@ -64,7 +64,7 @@ var http: HTTPRequest = null
 var in_flight := false
 var pending_mood := 0
 
-# agent-reactivity (opt-in): GOOB_HSM=1 makes the pet react to Claude Code.
+# agent-reactivity (default on): pet reacts to Claude Code. GOOB_HSM=0 to disable.
 var agent_hsm: LimboHSM = null
 var agent_poller: AgentPoller = null
 
@@ -149,7 +149,8 @@ func _ready() -> void:
 
 func _setup_agent_reactivity() -> void:
 	var flag := OS.get_environment("GOOB_HSM")
-	if flag == "" or flag == "0" or flag.to_lower() == "false":
+	# ponytail: default on; set GOOB_HSM=0 to disable
+	if flag == "0" or flag.to_lower() == "false":
 		return
 	agent_hsm = AgentHsm.build(self, pet)
 	agent_poller = AgentPoller.new()
