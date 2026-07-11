@@ -620,7 +620,9 @@ Call `_setup_agent_reactivity()` at the end of `_ready()`. In `_physics_process(
 ```gdscript
 	if agent_hsm != null:
 		agent_hsm.update(delta)
-		agent_poller.poll(float(Time.get_ticks_msec()) / 1000.0)
+		# WALL-CLOCK seconds — must match the hook's time.time() ts so the
+		# staleness math (now_s - cur.ts > 8) works. NOT get_ticks_msec (uptime).
+		agent_poller.poll(Time.get_unix_time_from_system())
 ```
 
 (If `.env` support is needed beyond real env vars, mirror how `DEBUG` is read — reuse that helper rather than re-implementing.)

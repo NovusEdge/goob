@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.6.0
+          use-dotnet: false
+      - name: Godot check
+        run: godot --headless --path . --editor --quit
+      - name: Godot tests
+        run: |
+          godot --headless --path . --script res://tests/test_commenter.gd
+          godot --headless --path . --script res://tests/test_drive_state.gd
+
+      - uses: astral-sh/setup-uv@v4
+      - name: Daemon tests
+        run: uv run pytest daemon/
+
+      - name: Hook tests
+        run: |
+          python3 tests/test_goob_hook.py
+          python3 tests/test_goob_codex_notify.py
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tui/go.mod
+      - name: TUI tests
+        run: cd tui && go test ./...
+      - name: Installer tests
+        run: cd installer && go test ./...
+
+  # ponytail: release job stub — uncomment when export_presets.cfg exists
+  # release:
+  #   if: startsWith(github.ref, 'refs/tags/')
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: chickensoft-games/setup-godot@v2
+  #       with:
+  #         version: 4.6.0
+  #         use-dotnet: false
+  #     - name: Export
+  #       run: |
+  #         mkdir -p dist
+  #         godot --headless --path . --export-release "Linux" dist/goob-linux
+  #         godot --headless --path . --export-release "Windows" dist/goob-windows.exe
+  #     - uses: softprops/action-gh-release@v2
+  #       with:
+  #         files: dist/*

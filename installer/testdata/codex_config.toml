@@ -1,0 +1,8 @@
+# Example Codex config.toml for testing
+model = "gpt-4o"
+sandbox = true
+max_tokens = 4096
+
+[preferences]
+auto_approve = false
+verbose = true

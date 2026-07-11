@@ -1,0 +1,255 @@
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(wc:*)",
+      "Bash(find:*)",
+      "WebSearch",
+      "Bash(uv sync:*)",
+      "WebFetch(domain:docs.firecrawl.dev)",
+      "Bash(uv run mypy:*)",
+      "Bash(uv run ruff:*)",
+      "Bash(uv run:*)",
+      "WebFetch(domain:docs.cloud.google.com)",
+      "WebFetch(domain:docs.astral.sh)",
+      "Bash(docker logs:*)",
+      "Bash(.venv/bin/pip list:*)",
+      "Bash(curl:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker compose:*)",
+      "WebFetch(domain:discuss.google.dev)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.unstructured.io)",
+      "WebFetch(domain:www.reducto.ai)",
+      "WebFetch(domain:developers.llamaindex.ai)",
+      "WebFetch(domain:procycons.com)",
+      "Bash(grep:*)",
+      "WebFetch(domain:docs.crawl4ai.com)",
+      "WebFetch(domain:blog.apify.com)",
+      "WebFetch(domain:scrapeops.io)",
+      "Bash(xargs basename:*)",
+      "WebFetch(domain:playwright.dev)",
+      "Bash(python3:*)",
+      "WebFetch(domain:api.opensustainabilityindex.org)",
+      "WebFetch(domain:opensustainabilityindex.org)",
+      "WebFetch(domain:crawl4ai.com)",
+      "WebFetch(domain:www.upm.com)",
+      "Bash(/usr/bin/du:*)",
+      "Bash(cat:*)",
+      "Bash(docker system df:*)",
+      "Bash(ls:*)",
+      "Bash(uv lock:*)",
+      "WebFetch(domain:www.storaenso.com)",
+      "Bash(chmod:*)",
+      "Bash(sudo chown:*)",
+      "Bash(docker ps:*)",
+      "Bash(done)",
+      "Bash(.venv/bin/python:*)",
+      "Bash(python -m pytest:*)",
+      "WebFetch(domain:docs.litellm.ai)",
+      "Bash(TEXTUAL_PRESS_KEYS='q' timeout 3 uv run python:*)",
+      "Bash(timeout 120 docker logs:*)",
+      "WebFetch(domain:dylancastillo.co)",
+      "WebFetch(domain:discuss.ai.google.dev)",
+      "WebFetch(domain:python.useinstructor.com)",
+      "Bash(xargs:*)",
+      "Bash(git mv:*)",
+      "WebFetch(domain:pymupdf.readthedocs.io)",
+      "Bash(PGPASSWORD=junipr psql:*)",
+      "Bash(TEXTUAL_PRESS_KEYS='2,down,q' timeout 5 uv run python:*)",
+      "Bash(echo:*)",
+      "Bash(uv add:*)",
+      "Bash(git grep:*)",
+      "WebFetch(domain:www.githubstatus.com)",
+      "WebFetch(domain:ai.google.dev)",
+      "WebFetch(domain:medium.com)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(make format:*)",
+      "Bash(timeout 120 uv run python:*)",
+      "Bash(timeout 180 uv run python:*)",
+      "Bash(timeout 300 uv run:*)",
+      "Bash(docker stats:*)",
+      "Bash(make migrate:*)",
+      "Bash(make lint:*)",
+      "WebFetch(domain:docs.dagster.io)",
+      "WebFetch(domain:docling-project.github.io)",
+      "WebFetch(domain:arxiv.org)",
+      "Bash(make typecheck:*)",
+      "Bash(timeout 10 docker logs:*)",
+      "Bash(timeout 15 docker logs:*)",
+      "Bash(head:*)",
+      "Bash(alembic history:*)",
+      "Bash(git rm:*)",
+      "Bash(git checkout:*)",
+      "Bash(jq:*)",
+      "Bash(tree:*)",
+      "Bash(git rebase:*)",
+      "Bash(git tag:*)",
+      "Bash(make test-unit:*)",
+      "Bash(git merge:*)",
+      "Bash(git log:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(timeout 10 uv run:*)",
+      "Bash(timeout 15 uv run:*)",
+      "WebFetch(domain:skywork.ai)",
+      "WebFetch(domain:evli-website.files.svdcdn.com)"
+    ],
+    "deny": [
+      "Bash(sed:*)"
+    ],
+    "defaultMode": "default"
+  },
+  "model": "claude-fable-5[1m]",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/home/novusedge/.nvm/versions/node/v24.11.1/bin/node\" \"/home/novusedge/.claude/hooks/gsd-context-monitor.js\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/home/novusedge/.nvm/versions/node/v24.11.1/bin/node\" \"/home/novusedge/.claude/hooks/gsd-read-injection-scanner.js\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"/home/novusedge/.claude/hooks/gsd-phase-boundary.sh\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"/home/novusedge/.claude/hooks/engrammic-post-commit-nudge.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/home/novusedge/.nvm/versions/node/v24.11.1/bin/node\" \"/home/novusedge/.claude/hooks/gsd-prompt-guard.js\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/home/novusedge/.nvm/versions/node/v24.11.1/bin/node\" \"/home/novusedge/.claude/hooks/gsd-read-guard.js\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/home/novusedge/.nvm/versions/node/v24.11.1/bin/node\" \"/home/novusedge/.claude/hooks/gsd-workflow-guard.js\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"/home/novusedge/.claude/hooks/gsd-validate-commit.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/home/novusedge/.nvm/versions/node/v24.11.1/bin/node\" \"/home/novusedge/.claude/hooks/gsd-check-update.js\""
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"/home/novusedge/.claude/hooks/gsd-session-state.sh\""
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "npx -y ccstatusline@latest",
+    "padding": 0
+  },
+  "enabledPlugins": {
+    "frontend-design-pro@frontend-design-pro": false,
+    "frontend-design@claude-code-plugins": false,
+    "frontend-design@claude-plugins-official": false,
+    "gopls-lsp@claude-plugins-official": false,
+    "greptile@claude-plugins-official": false,
+    "impeccable@impeccable": false,
+    "ponytail@ponytail": true,
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {
+    "impeccable": {
+      "source": {
+        "source": "github",
+        "repo": "pbakaus/impeccable"
+      }
+    },
+    "ponytail": {
+      "source": {
+        "source": "github",
+        "repo": "DietrichGebert/ponytail"
+      }
+    }
+  },
+  "alwaysThinkingEnabled": true,
+  "effortLevel": "high",
+  "promptSuggestionEnabled": false,
+  "tui": "fullscreen",
+  "skipWorkflowUsageWarning": true,
+  "theme": "dark",
+  "autoCompactEnabled": false,
+  "teammateMode": "auto",
+  "agentPushNotifEnabled": true,
+  "mcpServers": {
+    "engrammic": {
+      "type": "http",
+      "url": "https://beta.engrammic.ai/mcp/"
+    }
+  }
+}
