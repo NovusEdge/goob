@@ -56,12 +56,6 @@ var clip_left := 0
 var clip_next := "idle"
 var clip_lock := false
 
-# cursor-jiggle detection
-var prev_cursor_x := 0
-var cursor_dir := 0
-var cursor_seen := false
-var jiggle := 0
-
 var turn_pause := 0
 var last_active := false  # was the last chosen behaviour a mover?
 
@@ -102,7 +96,6 @@ func _clip(a: String, t: int, nxt: String = "idle", lock := false) -> void:
 func update(cursor_x: int, cursor_y: int) -> void:
 	var ground := screen_h - frame_h
 	ticks += 1
-	# _detect_jiggle(cursor_x)  # ponytail: jiggle-to-summon disabled for now
 
 	match state:
 		"clip":
@@ -376,50 +369,6 @@ func _interruptible() -> bool:
 	if state == "clip" and clip_lock:
 		return false
 	return true
-
-# _user_idle is the seam for "the user has been away for a while" (retreat
-# trigger B). Stubbed false — see github issue #2 (no cheap idle source on
-# Wayland yet). When wired, returning true should send the pet to retreat+sleep.
-func _user_idle() -> bool:
-	return false
-
-func _detect_jiggle(cx: int) -> void:
-	if cx < 0:
-		jiggle = 0
-		cursor_seen = false
-		cursor_dir = 0
-		return
-	if not cursor_seen:
-		cursor_seen = true
-		prev_cursor_x = cx
-		return
-	var dx := cx - prev_cursor_x
-	prev_cursor_x = cx
-	if jiggle > 0:
-		jiggle -= 1
-	if abs(dx) < 4:
-		return
-	var dir := 1 if dx > 0 else -1
-	if cursor_dir != 0 and dir != cursor_dir:
-		jiggle += 3
-	cursor_dir = dir
-	if jiggle >= 12 and grounded() and _interruptible():
-		_trigger(cfg.jiggle_reaction)
-		jiggle = 0
-
-# Route a config-named reaction (jiggle_reaction) to a behaviour.
-func _trigger(reaction: String) -> void:
-	match reaction:
-		"follow":
-			if cfg.follow_cursor:
-				state = "follow"
-				timer = 0
-		"startle":
-			scare()
-		"none", "":
-			pass
-		_:
-			pass
 
 func _clamp() -> void:
 	if x < 0:
