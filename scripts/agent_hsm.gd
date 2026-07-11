@@ -20,8 +20,7 @@ static func build(host: Node, pet) -> LimboHSM:
 	reacting.set_scene_root_hint(host)           # required or the tree won't instantiate
 
 	var sleeping := LimboState.new()
-	sleeping.name = "Sleeping"
-	sleeping.call_on_update(func(_delta): pet.drive_state("idle"))
+	sleeping.name = "Sleeping"  # ponytail: no-op like Ambient; pet.gd self-drives
 
 	hsm.add_child(ambient)
 	hsm.add_child(reacting)
