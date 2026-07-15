@@ -27,7 +27,7 @@ def _validate(args):
     out = {}
     say = args.get("say")
     if isinstance(say, str) and say.strip():
-        out["say"] = say.strip()
+        out["say"] = say.strip()[:200]
     state = args.get("state")
     if state in DRIVABLE:
         out["state"] = state

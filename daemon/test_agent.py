@@ -6,14 +6,16 @@ from daemon import agent
 
 def _emit_msg(args):
     return {"content": None, "tool_calls": [
-        {"id": "1", "function": {"name": "emit", "arguments": json.dumps(args)}}]}
+        {"id": "1", "type": "function",
+         "function": {"name": "emit", "arguments": json.dumps(args)}}]}
 
 
 def _tool_then_emit(tool_name, emit_args):
     # First call asks for a tool, second call emits.
     calls = [
         {"content": None, "tool_calls": [
-            {"id": "t", "function": {"name": tool_name, "arguments": "{}"}}]},
+            {"id": "t", "type": "function",
+             "function": {"name": tool_name, "arguments": "{}"}}]},
         _emit_msg(emit_args),
     ]
 

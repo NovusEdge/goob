@@ -110,7 +110,7 @@ def llm_completion(messages, tools, tool_choice):
         if api_key:
             kwargs["api_key"] = api_key
     resp = litellm.completion(model=model, messages=messages, tools=tools,
-                              tool_choice=tool_choice, **kwargs)
+                              tool_choice=tool_choice, timeout=5, **kwargs)
     # litellm prices the call; None/AttributeError for unpriceable models (Ollama).
     cost = None
     try:
@@ -125,7 +125,7 @@ def llm_completion(messages, tools, tool_choice):
     with _STATS_LOCK:
         _spend_usd += cost or 0.0
     m = resp.choices[0].message
-    calls = [{"id": tc.id,
+    calls = [{"id": tc.id, "type": "function",
               "function": {"name": tc.function.name,
                            "arguments": tc.function.arguments}}
              for tc in (m.tool_calls or [])]
@@ -138,7 +138,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
         try:
-            n = int(self.headers.get("Content-Length", 0))
+            n = min(max(0, int(self.headers.get("Content-Length", 0))), 65536)
             facts = json.loads(self.rfile.read(n) or b"{}")
             t0 = time.perf_counter()
             out = agent.run_agent(facts, _SYSTEM, llm_completion)
